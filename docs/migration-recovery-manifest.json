@@ -1,0 +1,26 @@
+[
+  {
+    "path": "supabase/migrations/202610040001_crm.sql",
+    "sha256": "f3ff6d23c332f61857de0733e220ee754a393cbe404d316ea96d7a1564e803aa",
+    "bytes": 16883,
+    "source": "supabase_migrations.schema_migrations.statements"
+  },
+  {
+    "path": "supabase/migrations/202610040002_operations.sql",
+    "sha256": "7ec02f8c09db1924d2b233bb8a0f94c5bd07948dac676593ae628652ba6faf79",
+    "bytes": 9297,
+    "source": "supabase_migrations.schema_migrations.statements"
+  },
+  {
+    "path": "supabase/migrations/202610040003_templates.sql",
+    "sha256": "e7953ce9128cc58e5140fc138242a8dae7451861c99f124e8f6b3e21bcb57740",
+    "bytes": 2898,
+    "source": "supabase_migrations.schema_migrations.statements"
+  },
+  {
+    "path": "supabase/migrations/202610040004_status_history.sql",
+    "sha256": "d1cafab50f4a019a695a91ca3338d5ea41210ed0e7337b5a4eb0c063470a66da",
+    "bytes": 801,
+    "source": "supabase_migrations.schema_migrations.statements"
+  }
+]

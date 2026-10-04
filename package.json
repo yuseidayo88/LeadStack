@@ -1,0 +1,63 @@
+{
+  "name": "leadstack",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0",
+    "build": "next build",
+    "start": "next start --hostname 0.0.0.0",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:start": "node scripts/local-supabase.mjs start",
+    "db:stop": "node scripts/local-supabase.mjs stop",
+    "db:reset": "supabase db reset",
+    "db:types": "node scripts/database-types.mjs",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:http": "node --test tests/http/api.test.mjs",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
+    "test:browser": "playwright test",
+    "test:recovery": "npm test && node --test tests/recovery/database.mjs",
+    "test:recovery:browser": "node tests/recovery/browser.mjs"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "@supabase/ssr": "0.12.7",
+    "@supabase/supabase-js": "2.117.2",
+    "@tailwindcss/postcss": "4.3.3",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "cmdk": "^1.1.1",
+    "cn": "^0.4.0",
+    "lucide-react": "1.52.0",
+    "next": "16.3.8",
+    "next-themes": "^0.4.6",
+    "radix-ui": "^1.6.7",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "server-only": "0.0.1",
+    "sonner": "^2.0.8",
+    "swr": "2.5.1",
+    "tailwind-merge": "3.7.0",
+    "tailwindcss": "4.3.3",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@electric-sql/pglite": "0.5.8",
+    "@playwright/test": "1.63.0",
+    "@types/node": "26.6.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.8",
+    "prettier": "3.9.9",
+    "supabase": "2.119.0",
+    "typescript": "6.0.3",
+    "vitest": "5.0.3"
+  },
+  "type": "module"
+}
