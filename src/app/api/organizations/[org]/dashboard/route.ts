@@ -14,7 +14,7 @@ export async function GET(
       .parse(new URL(request.url).searchParams.get("date") || tokyoDate());
     const { start, end } = dayRange(date);
     const { db, user } = await requireOrganization(org);
-    const [counts, tasks, callbacks] = await Promise.all([
+    const [counts, tasks, callbacks, overdue, missingNext] = await Promise.all([
       db.rpc("dashboard_counts", { org, day_start: start, day_end: end }),
       db
         .from("tasks")
@@ -35,14 +35,34 @@ export async function GET(
         .eq("type", "callback")
         .order("due_at", { nullsFirst: false })
         .limit(30),
+      db
+        .from("tasks")
+        .select("*")
+        .eq("organization_id", org)
+        .eq("assigned_user_id", user.id)
+        .eq("status", "todo")
+        .lt("due_at", start)
+        .order("due_at")
+        .limit(30),
+      db
+        .from("company_overview")
+        .select("id,name,last_contact_at")
+        .eq("organization_id", org)
+        .eq("assigned_user_id", user.id)
+        .is("next_task", null)
+        .not("company_status", "in", "(closed,not_target)")
+        .order("last_contact_at", { nullsFirst: true })
+        .limit(30),
     ]);
-    for (const r of [counts, tasks, callbacks])
+    for (const r of [counts, tasks, callbacks, overdue, missingNext])
       if (r.error) databaseError(r.error);
     const companyIds = [
       ...new Set(
-        [...(tasks.data || []), ...(callbacks.data || [])].map(
-          (t) => t.company_id,
-        ),
+        [
+          ...(tasks.data || []),
+          ...(callbacks.data || []),
+          ...(overdue.data || []),
+        ].map((t) => t.company_id),
       ),
     ];
     const companies = companyIds.length
@@ -59,6 +79,11 @@ export async function GET(
       timezone: "Asia/Tokyo",
       counts: counts.data,
       tasks: tasks.data?.map((t) => ({
+        ...t,
+        company_name: names.get(t.company_id) || null,
+      })),
+      missingNext: missingNext.data,
+      overdue: overdue.data?.map((t) => ({
         ...t,
         company_name: names.get(t.company_id) || null,
       })),

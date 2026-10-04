@@ -57,3 +57,10 @@ npm run test:recovery:browser
 - `/login?error=confirmation` の失敗案内を表示。
 
 報告されているユーザー本人のログイン失敗原因は未特定です。次は、秘密情報を含めず、失敗時のURL、時刻、画面のエラー文/APIのstatus・error.codeを確認する必要があります。
+
+
+## 未公開：5項目の業務改善
+
+`feature/workflow-improvements` に架電の次行動、日次画面、CSV確認取込、ヒアリングからの提案下書き、認証復旧を追加。上記12/18件は回収時点の記録です。現在の `test:recovery` は単体/API等33件＋DB28件です。追加SQL1件が必要で、本番適用・push・公開は未実施です。
+
+[変更仕様・検証・マイグレーションとメール設定](docs/WORKFLOW-IMPROVEMENTS.md) を参照してください。一般ユーザー向けのメール配信には既存SMTPの利用可否確認と再設定callback URLの許可が必要です。

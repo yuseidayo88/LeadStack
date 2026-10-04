@@ -1,4 +1,5 @@
 "use client";
+import { LoginRecovery } from "@/components/auth/recovery";
 import { useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Layers, ArrowRight, CheckCircle2 } from "lucide-react";
@@ -193,6 +194,7 @@ export function LoginForm() {
               </p>
             </>
           )}
+          <LoginRecovery />
         </div>
       </main>
     </div>

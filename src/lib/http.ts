@@ -8,7 +8,7 @@ export function sameOrigin(request: Request) {
   if (request.headers.get("sec-fetch-site") === "cross-site")
     throw new AppError(403, "origin", "送信元を確認できません");
 }
-export async function readJson(request: Request) {
+export async function readJson(request: Request, maxBytes = 128 * 1024) {
   sameOrigin(request);
   if (!request.headers.get("content-type")?.includes("application/json"))
     throw new AppError(415, "content_type", "JSON 形式で送信してください");
@@ -21,7 +21,7 @@ export async function readJson(request: Request) {
       const { value, done } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > 128 * 1024) {
+      if (size > maxBytes) {
         await reader.cancel();
         throw new AppError(413, "too_large", "入力内容が大きすぎます");
       }

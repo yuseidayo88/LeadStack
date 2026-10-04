@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Phone,
   Mail,
@@ -53,7 +54,13 @@ export function ActivityDialog({
   initialType?: string;
 }) {
   const { base, canWrite, members, profile, refresh } = useWorkspace();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+  const next = useApi<{ company: { id: string; name: string } | null }>(
+    open ? `${base}/companies/${companyId}/next` : null,
+  );
+  const nextCompany = next.data?.company;
+  const [result, setResult] = useState("connected");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [type, setType] = useState(initialType);
@@ -64,6 +71,8 @@ export function ActivityDialog({
     e.preventDefault();
     setBusy(true);
     setError("");
+    const goNext =
+      (e.nativeEvent as SubmitEvent).submitter?.getAttribute("name") === "next";
     const fd = new FormData(e.currentTarget);
     const str = (key: string) => String(fd.get(key) || "").trim();
     try {
@@ -102,6 +111,7 @@ export function ActivityDialog({
       );
       setOpen(false);
       await refresh();
+      if (goNext && nextCompany) router.push(`/companies/${nextCompany.id}`);
     } catch (e) {
       setError(message(e));
     } finally {
@@ -117,6 +127,7 @@ export function ActivityDialog({
           if (v) {
             setType(initialType);
             setCallback(false);
+            setResult("connected");
             setError("");
             setContact("");
           }
@@ -195,7 +206,11 @@ export function ActivityDialog({
                   <select
                     name="result"
                     className="native-select"
-                    defaultValue="connected"
+                    value={result}
+                    onChange={(e) => {
+                      setResult(e.target.value);
+                      if (e.target.value === "callback") setCallback(true);
+                    }}
                   >
                     {Object.entries(callResultLabels).map(([k, v]) => (
                       <option key={k} value={k}>
@@ -245,6 +260,7 @@ export function ActivityDialog({
                   <input
                     type="checkbox"
                     checked={callback}
+                    disabled={result === "callback"}
                     onChange={(e) => setCallback(e.target.checked)}
                   />
                   次回の再架電タスクを作成
@@ -304,6 +320,16 @@ export function ActivityDialog({
             <Button disabled={busy}>
               <Busy busy={busy}>活動を保存</Busy>
             </Button>
+            {nextCompany && (
+              <Button
+                name="next"
+                title={`会社名順の次の企業：${nextCompany.name}`}
+                disabled={busy}
+                variant="outline"
+              >
+                保存して次の企業へ
+              </Button>
+            )}
           </DialogFooter>
         </form>
       </DialogContent>

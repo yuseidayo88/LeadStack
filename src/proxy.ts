@@ -40,6 +40,7 @@ export async function proxy(request: NextRequest) {
 }
 export const config = {
   matcher: [
+    "/reset-password",
     "/dashboard/:path*",
     "/companies/:path*",
     "/deals/:path*",

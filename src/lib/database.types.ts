@@ -923,6 +923,18 @@ export type Database = {
       };
     };
     Functions: {
+      preview_company_import: {
+        Args: { org: string; rows: Json };
+        Returns: Json;
+      };
+      confirm_company_import: {
+        Args: { org: string; preview_id: string; selected_rows: number[] };
+        Returns: string[];
+      };
+      next_company: {
+        Args: { org: string; company: string };
+        Returns: { id: string; name: string }[];
+      };
       accept_invitation: { Args: { invitation_id: string }; Returns: string };
       create_organization: { Args: { org_name: string }; Returns: string };
       dashboard_counts: {

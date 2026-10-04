@@ -44,6 +44,8 @@ type Dashboard = {
   };
   tasks: Task[];
   callbacks: Task[];
+  overdue: Task[];
+  missingNext: { id: string; name: string; last_contact_at: string | null }[];
 };
 export default function DashboardPage() {
   const { base, profile } = useWorkspace();
@@ -141,6 +143,33 @@ export default function DashboardPage() {
       </div>
       <div className="grid items-start gap-5 xl:grid-cols-[1.3fr_1fr]">
         <div className="space-y-5">
+          <TaskSection
+            title="期限超過のタスク"
+            tasks={d.overdue}
+            href="/tasks?period=overdue"
+            kind="overdue"
+          />
+          <section className="surface p-5 space-y-3">
+            <h2 className="font-semibold">次のタスクがない担当企業</h2>
+            <p className="text-xs text-muted-foreground">
+              自分の担当・対象外と終了を除く・先頭30件
+            </p>
+            {d.missingNext.length ? (
+              d.missingNext.map((c) => (
+                <div
+                  key={c.id}
+                  className="flex items-center justify-between gap-3"
+                >
+                  <Link href={`/companies/${c.id}`} className="text-primary">
+                    {c.name}
+                  </Link>
+                  <ResourceDialog resource="tasks" companyId={c.id} />
+                </div>
+              ))
+            ) : (
+              <p>該当する企業はありません。</p>
+            )}
+          </section>
           <TaskSection
             title="今日のタスク"
             tasks={d.tasks}
@@ -272,14 +301,18 @@ function TaskSection({
       ) : (
         <Empty
           title={
-            kind === "today"
-              ? "今日のタスクはありません"
-              : "再架電の予定はありません"
+            kind === "overdue"
+              ? "期限超過のタスクはありません"
+              : kind === "today"
+                ? "今日のタスクはありません"
+                : "再架電の予定はありません"
           }
           description={
-            kind === "today"
-              ? "自分に割り当てられた今日のタスクが表示されます。"
-              : "架電記録から、次回の再架電を予約できます。"
+            kind === "overdue"
+              ? "自分に割り当てられた未完了のタスクが表示されます。"
+              : kind === "today"
+                ? "自分に割り当てられた今日のタスクが表示されます。"
+                : "架電記録から、次回の再架電を予約できます。"
           }
         />
       )}

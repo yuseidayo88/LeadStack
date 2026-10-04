@@ -213,6 +213,12 @@ export const activitySchema = z
       .optional(),
   })
   .superRefine((v, ctx) => {
+    if (v.type === "call" && v.result === "callback" && !v.callback)
+      ctx.addIssue({
+        code: "custom",
+        message: "折返し日時を指定してください",
+        path: ["callback"],
+      });
     if (
       v.type !== "call" &&
       (v.result != null ||

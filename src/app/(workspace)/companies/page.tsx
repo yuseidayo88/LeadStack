@@ -1,4 +1,5 @@
 "use client";
+import { CompanyImport } from "@/components/crm/company-import";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -96,8 +97,13 @@ export default function Companies() {
     <div className="page">
       <PageHeader
         title="企業"
-        description="接点を重ねて、次の商談につなげましょう。"
-        action={action}
+        description="最終接触：接続・折返し・アポイントの架電、メール、打合せ。社内メモ・状態変更・不通は含みません。"
+        action={
+          <div className="flex flex-wrap gap-2">
+            <CompanyImport key={base} />
+            {action}
+          </div>
+        }
       />
       <div className="surface overflow-hidden">
         <div className="flex flex-wrap items-center gap-3 border-b p-4">

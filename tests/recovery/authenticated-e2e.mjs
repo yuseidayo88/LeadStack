@@ -121,10 +121,14 @@ try {
     .getByRole("dialog")
     .getByLabel("活動メモ", { exact: true })
     .fill("ローカルE2E架電");
-  await page
-    .getByRole("dialog")
-    .getByLabel("次回の再架電タスクを作成", { exact: true })
-    .check();
+  await expect(
+    page
+      .getByRole("dialog")
+      .getByLabel("次回の再架電タスクを作成", { exact: true }),
+  ).toBeChecked();
+  await expect(
+    page.getByRole("dialog").getByLabel("再架電日時", { exact: true }),
+  ).toHaveAttribute("required", "");
   await page
     .getByRole("dialog")
     .getByLabel("再架電タスク名", { exact: true })

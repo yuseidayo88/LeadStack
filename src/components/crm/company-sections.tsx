@@ -1,4 +1,5 @@
 "use client";
+import { ProposalDrafter } from "./proposal-drafter";
 import { useState } from "react";
 import {
   Pencil,
@@ -322,14 +323,8 @@ export function Proposals({ companyId }: { companyId: string }) {
         <p className="text-sm text-muted-foreground">
           ヒアリングをもとに、最適な改善方法を整理しましょう。
         </p>
-        <Button
-          variant="outline"
-          disabled
-          title="AIによる提案生成は今後対応予定です"
-        >
-          AIで改善案を生成（準備中）
-        </Button>
       </div>
+      <ProposalDrafter key={companyId} companyId={companyId} />
       <div className="grid items-start gap-4 xl:grid-cols-3">
         {Object.entries(proposalTypeLabels).map(([type, title]) => (
           <CompanyRecords

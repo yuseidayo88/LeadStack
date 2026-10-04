@@ -217,7 +217,11 @@ test("invalid callback rolls the whole activity back", async () =>
           JSON.stringify({
             type: "call",
             result: "callback",
-            callback: { title: "bad", assigned_user_id: ids.other },
+            callback: {
+              title: "bad",
+              due_at: "2026-10-05T01:00:00Z",
+              assigned_user_id: ids.other,
+            },
           }),
         ]),
       "23503",
@@ -338,3 +342,220 @@ test("dashboard denies other organization", async () =>
       ),
     ),
   ));
+
+const csvRows = (name, extra = {}) => [
+  { row: 2, data: { name, ...extra }, errors: [] },
+];
+const previewImport = (rows, target = org) =>
+  scalar("select public.preview_company_import($1,$2)", [
+    target,
+    JSON.stringify(rows),
+  ]);
+const confirmImport = (id, rows = [2], target = org) =>
+  scalar("select public.confirm_company_import($1,$2,$3)", [target, id, rows]);
+test("CSV preview does not create companies; confirmation preserves phone and retry is idempotent", () =>
+  as("owner", async () => {
+    const before = await scalar(
+      "select count(*)::int from companies where organization_id=$1",
+      [org],
+    );
+    const p = await previewImport(
+      csvRows("CSV新規企業", { phone: "0312345678" }),
+    );
+    assert.equal(
+      await scalar(
+        "select count(*)::int from companies where organization_id=$1",
+        [org],
+      ),
+      before,
+    );
+    const ids = await confirmImport(p.id);
+    assert.equal(ids.length, 1);
+    assert.equal(
+      await scalar("select phone from companies where id=$1", [ids[0]]),
+      "0312345678",
+    );
+    assert.deepEqual(await confirmImport(p.id), ids);
+    assert.equal(
+      await scalar(
+        "select count(*)::int from companies where organization_id=$1",
+        [org],
+      ),
+      before + 1,
+    );
+  }));
+test("CSV duplicates are tenant scoped and file duplicates are shown", () =>
+  as("owner", async () => {
+    const p = await previewImport([
+      {
+        row: 2,
+        data: { name: " CSV新規企業 ", phone: "03-1234-5678" },
+        errors: [],
+      },
+      { row: 3, data: { name: "CSV新規企業" }, errors: [] },
+    ]);
+    assert.equal(p.rows[0].duplicates.length, 1);
+    assert.deepEqual(p.rows[0].fileDuplicates, [3]);
+    const other = await previewImport(csvRows("企業B"));
+    assert.equal(other.rows[0].duplicates.length, 0);
+  }));
+test("CSV preview and confirmation deny viewers and foreign organizations", async () => {
+  const p = await as("owner", () => previewImport(csvRows("秘密候補")));
+  await as("viewer", () => denied(() => previewImport(csvRows("不可"))));
+  await as("viewer", () => denied(() => confirmImport(p.id)));
+  await as("other", () => denied(() => confirmImport(p.id)));
+  await as("other", () =>
+    denied(() => confirmImport(p.id, [2], otherOrg), "P0002"),
+  );
+  await as("admin", () => denied(() => confirmImport(p.id), "P0002"));
+});
+test("CSV invalid rows, unknown row selections and expiry cannot be confirmed", () =>
+  as("owner", async () => {
+    const p = await previewImport([
+      { row: 2, data: { name: null }, errors: ["会社名必須"] },
+    ]);
+    await denied(() => confirmImport(p.id), "22023");
+    await denied(() => confirmImport(p.id, [3]), "22023");
+    await db.query(
+      "update private.company_import_previews set expires_at=now()-interval '1 minute' where id=$1",
+      [p.id],
+    );
+    await denied(() => confirmImport(p.id), "P0002");
+  }));
+test("CSV rejects a stale duplicate preview and rolls back the full import", () =>
+  as("owner", async () => {
+    const p = await previewImport([
+      { row: 2, data: { name: "原子性確認企業" }, errors: [] },
+      { row: 3, data: { name: "競合企業" }, errors: [] },
+    ]);
+    await db.query(
+      "insert into companies(organization_id,name) values($1,$2)",
+      [org, "競合企業"],
+    );
+    await denied(() => confirmImport(p.id, [2, 3]), "40001");
+    assert.equal(
+      await scalar(
+        "select count(*)::int from companies where name='原子性確認企業'",
+      ),
+      0,
+    );
+  }));
+test("CSV corporate-number conflict rolls back all selected rows", () =>
+  as("owner", async () => {
+    const p = await previewImport([
+      {
+        row: 2,
+        data: { name: "法人番号A", corporate_number: "1234567890123" },
+        errors: [],
+      },
+      {
+        row: 3,
+        data: { name: "法人番号B", corporate_number: "1234567890123" },
+        errors: [],
+      },
+    ]);
+    await denied(() => confirmImport(p.id, [2, 3]), "23505");
+    assert.equal(
+      await scalar(
+        "select count(*)::int from companies where name='法人番号A'",
+      ),
+      0,
+    );
+  }));
+test("true last contact ignores internal memos, status changes and unanswered calls", () =>
+  as("owner", async () => {
+    const c = await scalar(
+      "insert into companies(organization_id,name) values($1,'接触日時検証') returning id",
+      [org],
+    );
+    for (const payload of [
+      { type: "email", occurred_at: "2026-10-01T00:00:00Z" },
+      {
+        type: "call",
+        result: "connected",
+        occurred_at: "2026-10-02T00:00:00Z",
+      },
+      {
+        type: "call",
+        result: "no_answer",
+        occurred_at: "2026-10-03T00:00:00Z",
+      },
+      { type: "memo", occurred_at: "2026-10-04T00:00:00Z" },
+    ])
+      await scalar("select record_activity($1,$2,$3)", [
+        org,
+        c,
+        JSON.stringify(payload),
+      ]);
+    await db.query("update companies set company_status='active' where id=$1", [
+      c,
+    ]);
+    assert.equal(
+      new Date(
+        await scalar(
+          "select last_contact_at from company_overview where id=$1",
+          [c],
+        ),
+      ).toISOString(),
+      "2026-10-02T00:00:00.000Z",
+    );
+  }));
+test("callback result requires callback date at the database boundary", () =>
+  as("owner", () =>
+    denied(
+      () =>
+        scalar("select record_activity($1,$2,$3)", [
+          org,
+          company,
+          JSON.stringify({ type: "call", result: "callback" }),
+        ]),
+      "22023",
+    ),
+  ));
+test("next-company sequence is tenant scoped and returns empty for a foreign company", () =>
+  as("owner", async () => {
+    assert.deepEqual(
+      (await db.query("select * from next_company($1,$2)", [org, otherCompany]))
+        .rows,
+      [],
+    );
+    const rows = (
+      await db.query("select * from next_company($1,$2)", [org, company])
+    ).rows;
+    for (const row of rows)
+      assert.equal(
+        await scalar("select organization_id from companies where id=$1", [
+          row.id,
+        ]),
+        org,
+      );
+  }));
+
+test("private import preview rows retain RLS and new RPCs deny anonymous execution", async () => {
+  assert.equal(
+    await scalar(
+      "select relrowsecurity from pg_class where oid='private.company_import_previews'::regclass",
+    ),
+    true,
+  );
+  const p = await as("owner", () => previewImport(csvRows("非公開プレビュー")));
+  await as("admin", async () =>
+    assert.equal(
+      await scalar(
+        "select count(*)::int from private.company_import_previews where id=$1",
+        [p.id],
+      ),
+      0,
+    ),
+  );
+  await db.exec("set role anon");
+  try {
+    await denied(() => previewImport(csvRows("不可")));
+    await denied(() => confirmImport(p.id));
+    await denied(() =>
+      db.query("select * from next_company($1,$2)", [org, company]),
+    );
+  } finally {
+    await db.exec("reset role");
+  }
+});

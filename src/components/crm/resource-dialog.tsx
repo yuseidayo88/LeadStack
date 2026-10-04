@@ -113,7 +113,8 @@ function RecordForm({
             ? Boolean(value)
             : String(value);
     }
-    const config = record?.automation_config as {
+    const config = (record?.automation_config ??
+      defaults?.automation_config) as {
       trigger?: string;
       steps?: string[];
       tools?: string[];
@@ -172,7 +173,8 @@ function RecordForm({
       if (["tasks", "deals"].includes(resource))
         data.contact_id = values.contact_id || null;
       if (resource === "proposals") {
-        data.generated_by = "human";
+        data.generated_by =
+          record?.generated_by || defaults?.generated_by || "human";
         data.automation_config =
           values.type === "automate" && values.auto_trigger
             ? {
