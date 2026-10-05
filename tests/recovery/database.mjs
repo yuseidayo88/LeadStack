@@ -16,6 +16,9 @@ async function as(user, fn) {
   await db.query("select set_config('request.jwt.claim.sub',$1,false)", [
     ids[user],
   ]);
+  await db.query("select set_config('request.jwt.claims',$1,false)", [
+    JSON.stringify({ sub: ids[user], session_id: ids[user] }),
+  ]);
   try {
     return await fn();
   } finally {
@@ -32,6 +35,8 @@ before(async () => {
   db = new PGlite();
   await db.exec(`create role anon nologin; create role authenticated nologin;
  create schema auth; grant usage on schema public,auth to authenticated,anon;
+ create table auth.sessions(id uuid primary key,user_id uuid,not_after timestamptz);
+ create function auth.jwt() returns jsonb language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb $$;
  create table auth.users(id uuid primary key,email text,raw_user_meta_data jsonb default '{}',email_confirmed_at timestamptz);
  create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;`);
   for (const file of (await readdir("supabase/migrations"))
@@ -43,6 +48,8 @@ before(async () => {
       "insert into auth.users(id,email,raw_user_meta_data,email_confirmed_at) values($1,$2,$3,now())",
       [id, `${name}@example.test`, JSON.stringify({ name })],
     );
+  for (const id of Object.values(ids))
+    await db.query("insert into auth.sessions values($1,$1,null)", [id]);
   org = await as("owner", () =>
     scalar("select public.create_organization('組織A')"),
   );
@@ -559,3 +566,90 @@ test("private import preview rows retain RLS and new RPCs deny anonymous executi
     await db.exec("reset role");
   }
 });
+
+test("revoked or missing sessions lose table/view/private-preview and definer RPC access", async () => {
+  await db.query("delete from auth.sessions where id=$1", [ids.owner]);
+  try {
+    await as("owner", async () => {
+      for (const t of [
+        "companies",
+        "company_overview",
+        "profiles",
+        "improvement_types",
+        "organization_members",
+        "private.company_import_previews",
+      ])
+        assert.equal(await scalar(`select count(*)::int from ${t}`), 0);
+      await denied(() => scalar("select create_organization('revoked')"));
+      await denied(() => previewImport(csvRows("revoked")));
+      assert.equal(
+        (await db.query("select * from my_invitations()")).rows.length,
+        0,
+      );
+    });
+  } finally {
+    await db.query("insert into auth.sessions values($1,$1,null)", [ids.owner]);
+  }
+  await as("owner", async () => {
+    await db.query("select set_config('request.jwt.claims',$1,false)", [
+      JSON.stringify({ sub: ids.owner }),
+    ]);
+    assert.equal(await scalar("select count(*)::int from companies"), 0);
+  });
+});
+test("activity retry returns one activity and one callback, conflicting retry fails", () =>
+  as("owner", async () => {
+    const body = {
+      request_id: "00000000-0000-4000-8000-000000001234",
+      type: "call",
+      result: "callback",
+      callback: { title: "retry", due_at: "2026-10-06T01:00:00Z" },
+    };
+    const run = (b) =>
+      scalar("select record_activity($1,$2,$3)", [
+        org,
+        company,
+        JSON.stringify(b),
+      ]);
+    const id = await run(body);
+    assert.equal(await run(body), id);
+    assert.equal(
+      await scalar("select count(*)::int from tasks where title='retry'"),
+      1,
+    );
+    await denied(() => run({ ...body, title: "changed" }), "40001");
+  }));
+test("auth throttle persists denied attempts and applies canonical subject budgets", async () => {
+  await db.exec("set role anon");
+  try {
+    for (let i = 0; i < 10; i++)
+      assert.equal(
+        await scalar("select allow_auth_attempt('login',$1)", ["a".repeat(64)]),
+        true,
+      );
+    assert.equal(
+      await scalar("select allow_auth_attempt('login',$1)", ["a".repeat(64)]),
+      false,
+    );
+    await denied(() =>
+      scalar("select count(*)::int from private.auth_attempts"),
+    );
+  } finally {
+    await db.exec("reset role");
+  }
+  await db.exec(
+    "update private.auth_attempts set expires_at=now()-interval '1 second'",
+  );
+  assert.equal(
+    await scalar("select allow_auth_attempt('login',$1)", ["a".repeat(64)]),
+    true,
+  );
+});
+test("CSV direct RPC frequency guard is enforced", () =>
+  as("owner", async () => {
+    await db.exec("reset role");
+    await db.exec("delete from private.operation_limits");
+    await db.exec("set role authenticated");
+    for (let i = 0; i < 20; i++) await previewImport(csvRows("limit-" + i));
+    await denied(() => previewImport(csvRows("too-many")), "P0429");
+  }));

@@ -1,5 +1,5 @@
 "use client";
-import { useId, useState, type ReactNode } from "react";
+import { useId, useState, useRef, type ReactNode } from "react";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useWorkspace } from "@/components/layout/workspace";
@@ -40,9 +40,15 @@ export function ResourceDialog({
 }) {
   const { canWrite } = useWorkspace();
   const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
   if (!canWrite) return null;
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!saving) setOpen(v);
+      }}
+    >
       <DialogTrigger asChild>
         {trigger || (
           <Button size="sm" variant={record ? "outline" : "default"}>
@@ -68,6 +74,7 @@ export function ResourceDialog({
           record={record}
           companyId={companyId}
           defaults={defaults}
+          onBusy={setSaving}
           cancel={() => setOpen(false)}
           saved={(r) => {
             setOpen(false);
@@ -85,11 +92,13 @@ function RecordForm({
   defaults,
   cancel,
   saved,
+  onBusy,
 }: {
   resource: Resource;
   record?: RecordData;
   companyId?: string;
   defaults?: RecordData;
+  onBusy: (busy: boolean) => void;
   cancel: () => void;
   saved: (r: RecordData) => void;
 }) {
@@ -124,6 +133,8 @@ function RecordForm({
     result.auto_tools = config?.tools?.join("\n") || "";
     return result;
   });
+  const submitting = useRef(false);
+  const creationId = useRef("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
@@ -136,6 +147,7 @@ function RecordForm({
   }
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (submitting.current) return;
     setError("");
     setFieldErrors({});
     if (resource !== "companies" && !values.company_id) {
@@ -153,7 +165,10 @@ function RecordForm({
       );
       return;
     }
+    if (!creationId.current) creationId.current = crypto.randomUUID();
+    submitting.current = true;
     setBusy(true);
+    onBusy(true);
     try {
       const data: Record<string, unknown> = {};
       for (const f of fields[resource]) {
@@ -194,14 +209,23 @@ function RecordForm({
         `${base}/${resource}${record?.id ? `/${record.id}` : ""}`,
         record ? "PATCH" : "POST",
         data,
+        undefined,
+        record ? undefined : creationId.current,
       );
       toast.success(`${resourceNames[resource]}を保存しました`);
-      await refresh();
       saved(result.data);
+      void refresh().catch(() =>
+        toast.error(
+          "保存済みですが一覧を更新できませんでした。画面を再読み込みしてください",
+        ),
+      );
     } catch (e) {
       setError(message(e));
       if (e instanceof ApiError) setFieldErrors(e.fields);
+    } finally {
+      submitting.current = false;
       setBusy(false);
+      onBusy(false);
     }
   }
   const memberOptions = Object.fromEntries(

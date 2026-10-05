@@ -192,6 +192,7 @@ export const resourceSchema = z.enum(
 );
 export const activitySchema = z
   .strictObject({
+    request_id: uuid.optional(),
     company_id: uuid,
     contact_id: ref,
     type: z.enum(activityTypes),

@@ -2,7 +2,10 @@
 import { beforeEach, expect, test, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ signInWithPassword: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({
-  createClient: async () => ({ auth: mocks }),
+  createClient: async () => ({
+    auth: mocks,
+    rpc: async () => ({ data: true, error: null }),
+  }),
 }));
 import { POST } from "@/app/api/auth/[action]/route";
 import { safeNext } from "@/lib/navigation";

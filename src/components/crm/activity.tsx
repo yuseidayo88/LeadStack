@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Phone,
@@ -55,6 +55,8 @@ export function ActivityDialog({
 }) {
   const { base, canWrite, members, profile, refresh } = useWorkspace();
   const router = useRouter();
+  const requestId = useRef("");
+  const saving = useRef(false);
   const [open, setOpen] = useState(false);
   const next = useApi<{ company: { id: string; name: string } | null }>(
     open ? `${base}/companies/${companyId}/next` : null,
@@ -69,6 +71,8 @@ export function ActivityDialog({
   if (!canWrite) return null;
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (saving.current) return;
+    saving.current = true;
     setBusy(true);
     setError("");
     const goNext =
@@ -78,6 +82,7 @@ export function ActivityDialog({
     try {
       const body: Record<string, unknown> = {
         company_id: companyId,
+        request_id: requestId.current,
         contact_id: contact || null,
         type,
         title: str("title") || null,
@@ -115,6 +120,7 @@ export function ActivityDialog({
     } catch (e) {
       setError(message(e));
     } finally {
+      saving.current = false;
       setBusy(false);
     }
   }
@@ -125,6 +131,7 @@ export function ActivityDialog({
         if (!busy) {
           setOpen(v);
           if (v) {
+            requestId.current = crypto.randomUUID();
             setType(initialType);
             setCallback(false);
             setResult("connected");

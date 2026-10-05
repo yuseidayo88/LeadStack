@@ -15,11 +15,15 @@ export async function api<T>(
   method = "GET",
   body?: unknown,
   signal?: AbortSignal,
+  idempotencyKey?: string,
 ): Promise<T> {
   const response = await fetch(path, {
     method,
     credentials: "same-origin",
-    headers: body === undefined ? {} : { "Content-Type": "application/json" },
+    headers: {
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal,
   });

@@ -225,24 +225,9 @@ try {
   await mobile.close();
   log("viewer import denied and mobile CSV dialog stays within viewport");
   // Browser transport mocks: no real email delivery or password update.
-  await page.route("**/api/auth/update-password", (r) =>
-    r.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: '{"ok":true}',
-    }),
-  );
   await page.goto(base + "/reset-password");
-  await page
-    .getByLabel("新しいパスワード", { exact: true })
-    .fill("local-mocked-password12");
-  await page
-    .getByLabel("新しいパスワード（確認）", { exact: true })
-    .fill("local-mocked-password12");
-  await page
-    .getByRole("button", { name: "パスワードを更新", exact: true })
-    .click();
-  await expect(page.getByRole("status")).toContainText("更新しました");
+  await page.waitForURL("**/login?error=confirmation");
+  log("ordinary session cannot open recovery-only password form");
   await page.goto(base + "/login");
   let requests = 0;
   await page.route("**/api/auth/reset-password", (r) => {
@@ -278,9 +263,7 @@ try {
   await page.getByRole("button", { name: "メールを送信", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("対象のアカウント");
   await page.screenshot({ path: output + "/auth-recovery-desktop.png" });
-  log(
-    "recovery/resend/update UI + retry tested with mocked delivery, no real password or email changes",
-  );
+  log("recovery/resend UI + retry tested with mocked delivery");
   assert.deepEqual(errors, []);
   log("all improvement flows passed; browser page errors = 0");
 } finally {

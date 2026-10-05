@@ -18,6 +18,9 @@ for (const version of ["published", "improvements"])
       await db.query("select set_config('request.jwt.claim.sub',$1,false)", [
         id,
       ]);
+      await db.query("select set_config('request.jwt.claims',$1,false)", [
+        JSON.stringify({ sub: id, session_id: id }),
+      ]);
       try {
         return await fn();
       } finally {
@@ -27,6 +30,8 @@ for (const version of ["published", "improvements"])
     const denied = async (fn) => assert.rejects(fn, (e) => e.code === "42501");
     try {
       await db.exec(`create role anon nologin;create role authenticated nologin;create schema auth;grant usage on schema public,auth to authenticated,anon;
+ create table auth.sessions(id uuid primary key,user_id uuid,not_after timestamptz);
+ create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
  create table auth.users(id uuid primary key,email text,raw_user_meta_data jsonb default '{}',email_confirmed_at timestamptz);
  create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;`);
       const files = (await readdir("supabase/migrations"))
@@ -41,6 +46,8 @@ for (const version of ["published", "improvements"])
           JSON.stringify({ name, role: "owner" }),
           name === "pending" ? null : "2026-01-01T00:00:00Z",
         ]);
+      for (const id of Object.values(user))
+        await db.query("insert into auth.sessions values($1,$1,null)", [id]);
       const org = await as(user.owner, () =>
         scalar("select create_organization('A')"),
       );
@@ -61,6 +68,7 @@ for (const version of ["published", "improvements"])
         await db.query("select set_config('request.jwt.claims',$1,false)", [
           JSON.stringify({
             sub: user.admin,
+            session_id: user.admin,
             user_metadata: { role: "owner", organization_id: org },
           }),
         ]);
@@ -155,7 +163,7 @@ for (const version of ["published", "improvements"])
       });
       assert.equal(
         await scalar(
-          "select count(*)::int from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prosecdef and has_function_privilege('anon',p.oid,'EXECUTE')",
+          "select count(*)::int from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prosecdef and p.proname<>'allow_auth_attempt' and has_function_privilege('anon',p.oid,'EXECUTE')",
         ),
         0,
       );

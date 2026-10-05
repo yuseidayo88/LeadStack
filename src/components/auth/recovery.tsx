@@ -93,11 +93,19 @@ export function ResetPasswordForm() {
     setError("");
     const fd = new FormData(e.currentTarget);
     try {
-      await api("/api/auth/update-password", "POST", {
-        password: fd.get("password"),
-        confirmation: fd.get("confirmation"),
-      });
+      const result = await api<{ signedOut: boolean }>(
+        "/api/auth/update-password",
+        "POST",
+        {
+          password: fd.get("password"),
+          confirmation: fd.get("confirmation"),
+        },
+      );
       setDone(true);
+      if (!result.signedOut)
+        setError(
+          "パスワードは更新済みですが、全端末のログアウトを完了できませんでした。設定画面からログアウトしてください。",
+        );
     } catch (e) {
       setError(message(e));
     } finally {
@@ -140,6 +148,11 @@ export function ResetPasswordForm() {
             {busy ? "更新中…" : "パスワードを更新"}
           </Button>
         </form>
+      )}
+      {done && error && (
+        <p role="alert" className="text-destructive">
+          {error}
+        </p>
       )}
       <Link className="block text-primary" href="/login">
         ログインへ戻る

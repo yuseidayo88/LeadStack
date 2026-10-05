@@ -4,6 +4,7 @@ import { activitySchema } from "@/lib/crm/schemas";
 import { proposalDrafts } from "@/lib/crm/proposal-drafts";
 import type { Tables } from "@/lib/database.types";
 const mocks = vi.hoisted(() => ({
+  getClaims: vi.fn(),
   exchangeCodeForSession: vi.fn(),
   resetPasswordForEmail: vi.fn(),
   resend: vi.fn(),
@@ -12,7 +13,10 @@ const mocks = vi.hoisted(() => ({
   signOut: vi.fn(),
 }));
 vi.mock("@/lib/supabase/server", () => ({
-  createClient: async () => ({ auth: mocks }),
+  createClient: async () => ({
+    auth: mocks,
+    rpc: async () => ({ data: true, error: null }),
+  }),
 }));
 import { GET as callback } from "@/app/auth/callback/route";
 import { POST } from "@/app/api/auth/[action]/route";
@@ -33,6 +37,14 @@ async function call(
 beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_SITE_URL", "http://localhost:3000");
   vi.resetAllMocks();
+  mocks.getClaims.mockResolvedValue({
+    data: {
+      claims: {
+        amr: [{ method: "recovery", timestamp: Math.floor(Date.now() / 1000) }],
+      },
+    },
+    error: null,
+  });
 });
 test("CSV preserves BOM Japanese, quoted commas, escaped quotes, embedded newlines and phone zero", () => {
   const rows = previewCsv(
@@ -194,7 +206,7 @@ test("password update changes only current user and clears local session", async
     ).status,
   ).toBe(200);
   expect(mocks.updateUser).toHaveBeenCalledWith({ password: "new-password12" });
-  expect(mocks.signOut).toHaveBeenCalledWith({ scope: "local" });
+  expect(mocks.signOut).toHaveBeenCalledWith({ scope: "global" });
 });
 
 test("callback handles valid, expired and missing codes without external redirects", async () => {
@@ -258,5 +270,67 @@ test.each(["email_address_not_authorized", "email_provider_disabled"])(
     const response = await call("reset-password", { email: "x@example.test" });
     expect(response.status).toBe(503);
     expect((await response.json()).error.code).toBe("mail_configuration");
+  },
+);
+
+test.each(
+  [
+    [],
+    [{ method: "password", timestamp: Math.floor(Date.now() / 1000) }],
+    [{ method: "recovery", timestamp: Math.floor(Date.now() / 1000) - 901 }],
+    [{ method: "recovery", timestamp: Math.floor(Date.now() / 1000) + 60 }],
+  ].map((amr) => ({ amr })),
+)(
+  "password reset rejects ordinary, absent, stale or future recovery claims",
+  async ({ amr }) => {
+    mocks.getUser.mockResolvedValue({
+      data: { user: { id: "fixture" } },
+      error: null,
+    });
+    mocks.getClaims.mockResolvedValue({
+      data: { claims: { amr } },
+      error: null,
+    });
+    expect(
+      (
+        await call("update-password", {
+          password: "valid-new-password12",
+          confirmation: "valid-new-password12",
+        })
+      ).status,
+    ).toBe(403);
+    expect(mocks.updateUser).not.toHaveBeenCalled();
+  },
+);
+test("password reset fails closed when verified claims unavailable", async () => {
+  mocks.getUser.mockResolvedValue({
+    data: { user: { id: "fixture" } },
+    error: null,
+  });
+  mocks.getClaims.mockResolvedValue({
+    data: null,
+    error: { message: "invalid" },
+  });
+  expect(
+    (
+      await call("update-password", {
+        password: "valid-new-password12",
+        confirmation: "valid-new-password12",
+      })
+    ).status,
+  ).toBe(403);
+});
+test.each(["aaaaaaaaaaaa", "abcdabcdabcd", "password1234"])(
+  "signup rejects trivially repeated or common password",
+  async (password) => {
+    expect(
+      (
+        await call("signup", {
+          email: "fixture@example.test",
+          name: "fixture",
+          password,
+        })
+      ).status,
+    ).toBe(422);
   },
 );

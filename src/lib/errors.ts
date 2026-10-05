@@ -13,6 +13,24 @@ export function databaseError(error: {
   message: string;
 }): never {
   switch (error.code) {
+    case "P0429":
+      throw new AppError(
+        429,
+        "rate_limited",
+        "操作回数が多くなっています。1分ほど置いて再試行してください",
+      );
+    case "55P03":
+      throw new AppError(
+        409,
+        "busy",
+        "別の保存処理が進行中です。少し待って再試行してください",
+      );
+    case "40001":
+      throw new AppError(
+        409,
+        "request_conflict",
+        "保存済みの操作と内容が異なります。一覧を更新して保存結果を確認してください",
+      );
     case "42501":
       throw new AppError(403, "forbidden", "この操作を行う権限がありません");
     case "23505":

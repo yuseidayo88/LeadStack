@@ -1,3 +1,6 @@
+import { throttleAuth } from "@/lib/auth-throttle";
+import { newPassword } from "@/lib/password-policy";
+import { hasRecentRecovery } from "@/lib/recovery";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { handle, readJson } from "@/lib/http";
@@ -9,7 +12,7 @@ const credentials = z.strictObject({
 });
 const signup = credentials.extend({
   name: z.string().trim().min(1).max(200),
-  password: z.string().min(12, "12文字以上で入力してください").max(128),
+  password: newPassword,
 });
 export async function POST(
   request: Request,
@@ -47,6 +50,7 @@ export async function POST(
           "configuration_required",
           "サイトの URL が未設定です",
         );
+      await throttleAuth(db, "recovery", email);
       const redirectTo = new URL("/auth/callback", site);
       if (action === "reset-password")
         redirectTo.searchParams.set("next", "/reset-password");
@@ -107,6 +111,12 @@ export async function POST(
           "unauthorized",
           "リンクの有効期限が切れています。再設定メールをもう一度お申し込みください",
         );
+      if (!(await hasRecentRecovery(db)))
+        throw new AppError(
+          403,
+          "recovery_required",
+          "再設定メールのリンクをこのブラウザで開いてください。有効な復旧操作から15分以内に設定してください",
+        );
       const { error } = await db.auth.updateUser({ password: data.password });
       if (error)
         throw new AppError(
@@ -114,8 +124,8 @@ export async function POST(
           "password_update_failed",
           "パスワードを更新できませんでした。別のパスワードを指定するか、リンクを再取得してください",
         );
-      await db.auth.signOut({ scope: "local" });
-      return Response.json({ ok: true });
+      const { error: logoutError } = await db.auth.signOut({ scope: "global" });
+      return Response.json({ ok: true, signedOut: !logoutError });
     }
     if (action === "signup") {
       const data = signup.parse(input);
@@ -126,6 +136,7 @@ export async function POST(
           "configuration_required",
           "サイトの URL が未設定です",
         );
+      await throttleAuth(db, "signup", data.email);
       const { data: result, error } = await db.auth.signUp({
         email: data.email,
         password: data.password,
@@ -146,6 +157,7 @@ export async function POST(
       );
     }
     const data = credentials.parse(input);
+    await throttleAuth(db, "login", data.email);
     const { error } = await db.auth.signInWithPassword(data);
     if (error) throw loginError(error);
     return Response.json({ ok: true });

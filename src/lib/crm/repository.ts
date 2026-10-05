@@ -155,12 +155,18 @@ export async function getRecord(
   return data;
 }
 // Usable from future CSV/list acquisition jobs with the caller's authorized client.
-export async function createCompany(db: DbClient, org: string, input: unknown) {
+export async function createCompany(
+  db: DbClient,
+  org: string,
+  input: unknown,
+  creationId?: string,
+) {
   parseRecord("companies", input);
   const { data, error } = await db
     .from("companies")
     .insert({
       ...schemas.companies.parse(input),
+      ...(creationId ? { id: uuid.parse(creationId) } : {}),
       organization_id: uuid.parse(org),
     })
     .select()
@@ -173,15 +179,21 @@ export async function createRecord(
   org: string,
   resource: Resource,
   input: unknown,
+  creationId?: string,
 ) {
   uuid.parse(org);
+  const identity = creationId ? { id: uuid.parse(creationId) } : {};
   switch (resource) {
     case "companies":
-      return createCompany(db, org, input);
+      return createCompany(db, org, input, creationId);
     case "contacts": {
       const { data, error } = await db
         .from("contacts")
-        .insert({ ...schemas.contacts.parse(input), organization_id: org })
+        .insert({
+          ...identity,
+          ...schemas.contacts.parse(input),
+          organization_id: org,
+        })
         .select()
         .single();
       if (error) databaseError(error);
@@ -190,7 +202,11 @@ export async function createRecord(
     case "tasks": {
       const { data, error } = await db
         .from("tasks")
-        .insert({ ...schemas.tasks.parse(input), organization_id: org })
+        .insert({
+          ...identity,
+          ...schemas.tasks.parse(input),
+          organization_id: org,
+        })
         .select()
         .single();
       if (error) databaseError(error);
@@ -199,7 +215,11 @@ export async function createRecord(
     case "deals": {
       const { data, error } = await db
         .from("deals")
-        .insert({ ...schemas.deals.parse(input), organization_id: org })
+        .insert({
+          ...identity,
+          ...schemas.deals.parse(input),
+          organization_id: org,
+        })
         .select()
         .single();
       if (error) databaseError(error);
@@ -209,6 +229,7 @@ export async function createRecord(
       const { data, error } = await db
         .from("business_processes")
         .insert({
+          ...identity,
           ...schemas.business_processes.parse(input),
           organization_id: org,
         })
@@ -220,7 +241,11 @@ export async function createRecord(
     case "company_tools": {
       const { data, error } = await db
         .from("company_tools")
-        .insert({ ...schemas.company_tools.parse(input), organization_id: org })
+        .insert({
+          ...identity,
+          ...schemas.company_tools.parse(input),
+          organization_id: org,
+        })
         .select()
         .single();
       if (error) databaseError(error);
@@ -229,7 +254,11 @@ export async function createRecord(
     case "pain_points": {
       const { data, error } = await db
         .from("pain_points")
-        .insert({ ...schemas.pain_points.parse(input), organization_id: org })
+        .insert({
+          ...identity,
+          ...schemas.pain_points.parse(input),
+          organization_id: org,
+        })
         .select()
         .single();
       if (error) databaseError(error);
@@ -238,7 +267,11 @@ export async function createRecord(
     case "proposals": {
       const { data, error } = await db
         .from("proposals")
-        .insert({ ...schemas.proposals.parse(input), organization_id: org })
+        .insert({
+          ...identity,
+          ...schemas.proposals.parse(input),
+          organization_id: org,
+        })
         .select()
         .single();
       if (error) databaseError(error);
