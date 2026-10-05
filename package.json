@@ -19,7 +19,8 @@
     "format": "prettier --write .",
     "test:browser": "playwright test",
     "test:recovery": "npm test && node --test tests/recovery/database.mjs",
-    "test:recovery:browser": "node tests/recovery/browser.mjs"
+    "test:recovery:browser": "node tests/recovery/browser.mjs",
+    "check:gbiz": "node --conditions=react-server --env-file-if-exists=.env.local scripts/check-gbiz.mjs"
   },
   "engines": {
     "node": ">=22.0.0"
