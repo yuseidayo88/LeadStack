@@ -2,12 +2,14 @@
 import { chromium } from "@playwright/test";
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
+const base = process.env.E2E_BASE_URL || "http://localhost:3000";
+assert.ok(["localhost", "127.0.0.1"].includes(new URL(base).hostname));
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
 try {
-  await page.goto("http://localhost:3000/login?error=confirmation");
+  await page.goto(base + "/login?error=confirmation");
   await page.getByRole("heading", { name: "おかえりなさい" }).waitFor();
   assert.match(
     await page
@@ -63,23 +65,23 @@ try {
     await page.locator("input[name=password]").getAttribute("minlength"),
     "12",
   );
-  await page.goto("http://localhost:3000/companies");
+  await page.goto(base + "/companies");
   await page.waitForURL("**/login?next=*");
   assert.equal(new URL(page.url()).searchParams.get("next"), "/companies");
   const api = page.request;
-  const unauth = await api.get("http://localhost:3000/api/profile");
+  const unauth = await api.get(base + "/api/profile");
   assert.equal(unauth.status(), 401);
-  const invalid = await api.post("http://localhost:3000/api/auth/login", {
+  const invalid = await api.post(base + "/api/auth/login", {
     data: { email: "bad", password: "" },
-    headers: { origin: "http://localhost:3000" },
+    headers: { origin: base },
   });
   assert.equal(invalid.status(), 422);
-  const csrf = await api.post("http://localhost:3000/api/auth/login", {
+  const csrf = await api.post(base + "/api/auth/login", {
     data: { email: "person@example.test", password: "unused" },
     headers: { origin: "https://evil.example" },
   });
   assert.equal(csrf.status(), 403);
-  const health = await api.get("http://localhost:3000/api/health");
+  const health = await api.get(base + "/api/health");
   assert.equal(health.status(), 200);
   assert.equal((await health.json()).databaseVerified, false);
   assert.deepEqual(errors, []);
