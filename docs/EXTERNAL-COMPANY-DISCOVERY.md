@@ -1,6 +1,6 @@
 # 外部企業検索・営業リスト取込
 
-2026-10-05。既存V1に `/discover`（企業を探す）を追加。実装・検証はローカルで実施し、本番のDB・公開サイトには未反映。
+2026-10-05。既存V1に `/discover`（企業を探す）を追加し、本番公開済み。実Gビズ取得・県/業種検索・営業リスト取込まで本番で成功。公開先・証跡・運用上の制限は [本番公開記録](PRODUCTION-RELEASE-2026-10-05.md) を参照。
 
 ## 利用の流れ
 
@@ -62,13 +62,13 @@ E2E_BASE_URL=http://localhost:3010 E2E_USERS_FILE=/workspace/handoff/e2e-private
 
 並行処理試験は固定の自前コンテナ `leadstack-e2e-db` 内に専用の一時DBを作り、終了時に削除する。ブラウザー試験はlocalhostか127.0.0.1だけを許可し、合成データを専用組織へ登録する。既存旧環境・本番へ向けない。
 
-VercelではProductionのトークン登録を確認済み。ただしSecretとして値を読み出せず、Development用は未設定のため、認証付き実APIへの疎通・実データの収録率は未検証。API契約・異常時の挙動はモック、認証・RLS・検索・取込・画面は実ローカル環境で検証する。実APIの検証を済ませるまでは本番接続成功と扱わない。
+Vercel Productionの既存トークンを使用し、本番で実Gビズ検索と詳細取得に成功した。トークンの値は読み出さず、ブラウザーにも渡していない。Development用は未設定。広範囲の収録率・異常時の挙動は実APIで網羅したものではなく、以下のローカル試験と区別する。
 
 ## 参照
 
 [GビズインフォAPI v2](https://api.info.gbiz.go.jp/hojin/v3/api-docs/v2) · [公式検索分類](https://info.gbiz.go.jp/) · [データ定義](https://help.info.gbiz.go.jp/hc/ja/articles/4798567593630) · [要件案](EXTERNAL-COMPANY-DISCOVERY-REQUIREMENTS.md) · [接続設定](GBIZ-CONNECTION.md)
 
-## 最終検証結果
+## 公開前のローカル検証結果
 
 - 単体/API **271件成功**（Gビズ契約43、公式サイト補完110、外部企業検索67、既存51）。実Gビズ応答・公開サイトはモックで検証。
 - DB/RLS **52件成功**（既存34、追加18）。他組織・viewer・失効セッション・明示確認・再送・既存CRM非上書き・保存上限を検証。
