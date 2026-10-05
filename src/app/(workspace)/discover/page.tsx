@@ -33,12 +33,21 @@ import {
 import { SearchableSelect } from "@/components/crm/searchable-select";
 import { ActivityDialog } from "@/components/crm/activity";
 import { CandidateDialog } from "@/components/discovery/candidate-dialog";
+import { TargetingFilters } from "@/components/discovery/targeting-filters";
+import {
+  defaultDiscoveryFilters,
+  matchingBusinessKeywords,
+  parseDiscoveryFilters,
+  targetingFilterError,
+  targetingPresets,
+  type DiscoveryFilters,
+} from "@/lib/discovery/targeting";
+import { industryOptions } from "@/lib/discovery/industries";
 import { DiscoveryImportDialog } from "@/components/discovery/import-dialog";
 import {
   employeeLabel,
   fetchedLabel,
   PhoneLink,
-  UnknownValue,
   WebsiteLink,
 } from "@/components/discovery/display";
 import { Button } from "@/components/ui/button";
@@ -72,6 +81,9 @@ const subscribeToStorage = (listener: () => void) => {
   return () => window.removeEventListener("storage", listener);
 };
 const emptyStorageSnapshot = () => null;
+const subscribeToHydration = () => () => {};
+const clientHydrationSnapshot = () => true;
+const serverHydrationSnapshot = () => false;
 function parseCheckpoint(value: string | null): AcquisitionCheckpoint | null {
   if (!value) return null;
   try {
@@ -119,17 +131,40 @@ function parseCheckpoint(value: string | null): AcquisitionCheckpoint | null {
 }
 
 export default function DiscoverCompanies() {
-  const { base, canWrite, refresh } = useWorkspace();
-  const [search, setSearch] = useState("");
-  const term = useDebounced(search);
-  const [prefecture, setPrefecture] = useState("");
-  const [industry, setIndustry] = useState("");
-  const [presence, setPresence] = useState<Partial<Record<Presence, boolean>>>(
-    {},
+  const { base } = useWorkspace();
+  const hydrated = useSyncExternalStore(
+    subscribeToHydration,
+    clientHydrationSnapshot,
+    serverHydrationSnapshot,
   );
+  if (!hydrated) return <Loading label="検索条件を読み込み中" />;
+  // Remount every piece of search, selection and acquisition state on org switch.
+  return <OrganizationDiscovery key={base} />;
+}
+
+function OrganizationDiscovery() {
+  const { base, canWrite, refresh } = useWorkspace();
+  const filtersKey = `leadstack.discovery.filters.v1.${base}`;
+  // The parent mounts this component only after hydration. Restore once so a
+  // different tab cannot change the results underneath an existing selection.
+  const [filters, setFilters] = useState<DiscoveryFilters>(() => {
+    try {
+      return parseDiscoveryFilters(window.localStorage.getItem(filtersKey));
+    } catch {
+      return { ...defaultDiscoveryFilters };
+    }
+  });
+  const { search, prefecture, industry, sort, direction } = filters;
+  const term = useDebounced(search);
+  const keywords = useDebounced(filters.businessKeywords);
+  const filtersSettling =
+    search !== term || filters.businessKeywords !== keywords;
+  const filterError = targetingFilterError(filters);
+  const queryFilterError =
+    filterError ||
+    targetingFilterError({ ...filters, businessKeywords: keywords });
+  const preset = targetingPresets.find((item) => item.id === filters.presetId);
   const [page, setPage] = useState(1);
-  const [sort, setSort] = useState<Sort>("fetched_at");
-  const [direction, setDirection] = useState<"asc" | "desc">("desc");
   const [selected, setSelected] = useState<string[]>([]);
   const [selectionRecords, setSelectionRecords] = useState<
     Record<string, Candidate>
@@ -157,18 +192,29 @@ export default function DiscoverCompanies() {
   const rememberedAcquisition = acquired ?? parseCheckpoint(savedCheckpoint);
   const inFlight = useRef(false);
   const rows = useApi<DiscoveryListResponse>(
-    `${base}/company-discovery?${query({
-      search: term,
-      prefecture,
-      industry,
-      hasPhone: presence.hasPhone ? "true" : undefined,
-      hasWebsite: presence.hasWebsite ? "true" : undefined,
-      hasEmployees: presence.hasEmployees ? "true" : undefined,
-      page,
-      pageSize: 20,
-      sort,
-      direction,
-    })}`,
+    queryFilterError || filtersSettling
+      ? null
+      : `${base}/company-discovery?${query({
+          search: term,
+          prefecture,
+          industry,
+          hasPhone: filters.hasPhone ? "true" : undefined,
+          hasWebsite: filters.hasWebsite ? "true" : undefined,
+          hasEmployees: filters.hasEmployees ? "true" : undefined,
+          employeeMin: filters.employeeMin || undefined,
+          employeeMax: filters.employeeMax || undefined,
+          includeUnknownEmployees: filters.includeUnknownEmployees
+            ? "true"
+            : "false",
+          includeUnknownIndustry: filters.includeUnknownIndustry
+            ? "true"
+            : "false",
+          businessKeywords: keywords || undefined,
+          page,
+          pageSize: 20,
+          sort,
+          direction,
+        })}`,
   );
   const data = rows.data;
   const remoteSearch = search.normalize("NFKC").trim();
@@ -186,7 +232,15 @@ export default function DiscoverCompanies() {
     !!search ||
     !!prefecture ||
     !!industry ||
-    Object.values(presence).some(Boolean);
+    filters.hasPhone ||
+    filters.hasWebsite ||
+    filters.hasEmployees ||
+    !!filters.employeeMin ||
+    !!filters.employeeMax ||
+    !!filters.businessKeywords ||
+    !filters.includeUnknownEmployees ||
+    filters.includeUnknownIndustry ||
+    !!filters.presetId;
   const allSelected =
     !!data?.data.length && data.data.every((row) => selected.includes(row.id));
 
@@ -195,17 +249,30 @@ export default function DiscoverCompanies() {
     setSelected([]);
     setSelectionRecords({});
   }
-  function clear() {
-    setSearch("");
-    setPrefecture("");
-    setIndustry("");
-    setPresence({});
+  function changeFilters(change: Partial<DiscoveryFilters>) {
+    const next = { ...filters, ...change };
+    if (change.hasEmployees) next.includeUnknownEmployees = false;
+    else if (change.includeUnknownEmployees) next.hasEmployees = false;
+    setFilters(next);
+    // Invalid drafts remain editable but must not replace the last valid saved search.
+    if (!targetingFilterError(next)) {
+      try {
+        window.localStorage.setItem(
+          filtersKey,
+          JSON.stringify({ version: 1, filters: next }),
+        );
+      } catch {}
+    }
     resetPage();
   }
+  function clear() {
+    changeFilters({ ...defaultDiscoveryFilters });
+  }
   function order(next: Sort) {
-    setSort(next);
-    setDirection(sort === next && direction === "asc" ? "desc" : "asc");
-    setPage(1);
+    changeFilters({
+      sort: next,
+      direction: sort === next && direction === "asc" ? "desc" : "asc",
+    });
   }
   function toggle(id: string, checked: boolean) {
     if (checked && !selected.includes(id) && selected.length >= 50) {
@@ -329,25 +396,30 @@ export default function DiscoverCompanies() {
         }
       />
 
-      <div className="surface space-y-4 p-4 md:p-5">
+      <div className="surface space-y-3 p-4 md:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="font-semibold">企業の検索条件</h2>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              都道府県は法人の所在地で絞り込みます。業種・情報の有無は、取得済み候補に適用されます。
+              所在地は法人の住所です。検索条件はこのブラウザに組織ごとに保存します。
             </p>
           </div>
-          {hasFilters && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={clear}
-              disabled={acquiring}
-            >
-              <X />
-              条件をクリア
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline" size="sm">
+              <a href="#candidate-list">候補を見る</a>
             </Button>
-          )}
+            {hasFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clear}
+                disabled={acquiring}
+              >
+                <X />
+                条件をクリア
+              </Button>
+            )}
+          </div>
         </div>
         <fieldset
           disabled={acquiring}
@@ -366,8 +438,7 @@ export default function DiscoverCompanies() {
                 value={search}
                 maxLength={200}
                 onChange={(event) => {
-                  setSearch(event.target.value);
-                  resetPage();
+                  changeFilters({ search: event.target.value });
                 }}
               />
             </div>
@@ -383,8 +454,7 @@ export default function DiscoverCompanies() {
               value={prefecture}
               disabled={acquiring}
               onChange={(value) => {
-                setPrefecture(value);
-                resetPage();
+                changeFilters({ prefecture: value });
               }}
             />
           </div>
@@ -397,78 +467,127 @@ export default function DiscoverCompanies() {
               label="業種"
               options={[
                 { value: "", label: "業種：すべて" },
-                ...(data?.industryOptions ?? []),
+                ...(data?.industryOptions ?? [
+                  ...industryOptions,
+                  { value: "unknown", label: "業種：未確認" },
+                ]),
               ]}
               value={industry}
               disabled={acquiring}
               onChange={(value) => {
-                setIndustry(value);
-                resetPage();
+                changeFilters({ industry: value });
               }}
             />
           </div>
         </fieldset>
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-3 border-t pt-4">
+        <TargetingFilters
+          filters={filters}
+          disabled={acquiring}
+          error={filterError}
+          onChange={changeFilters}
+        />
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3 border-t pt-3">
           {Object.entries(presenceLabels).map(([key, label]) => (
             <label key={key} className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
-                checked={!!presence[key as Presence]}
+                checked={filters[key as Presence]}
                 disabled={acquiring}
                 onChange={(event) => {
-                  setPresence((current) => ({
-                    ...current,
-                    [key]: event.target.checked,
-                  }));
-                  resetPage();
+                  changeFilters({ [key]: event.target.checked });
                 }}
               />
               {label}
             </label>
           ))}
         </div>
-        <div className="space-y-3 rounded-md bg-slate-50 p-4">
+        <div className="space-y-2 rounded-md bg-slate-50 p-3">
           {data && !data.configured ? (
-            <p role="status" className="text-sm">
+            <p role="status" className="text-xs leading-relaxed">
               外部データの接続設定が必要です。取得済みの候補は検索できます。新しく取得するには管理者に接続設定を依頼してください。
             </p>
           ) : (
-            <p className="text-sm leading-relaxed">
-              新しい候補を探すには都道府県または企業名を指定して取得してください。1回につき最大20社を調べます。業種での絞り込みは取得後に反映されます。
+            <p className="text-xs leading-relaxed">
+              Gビズインフォへの取得条件は「都道府県・企業名・法人番号」です。1回最大20社。人数・業種・業務キーワードは取得済み候補への絞り込みに使います。
             </p>
           )}
-          {canWrite ? (
-            <div className="flex flex-wrap items-center gap-3">
-              {fetchButton}
-              {!prefecture && !remoteSearch && (
-                <span className="text-xs text-muted-foreground">
-                  都道府県または企業名・法人番号を指定してください
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            {preset && (
+              <div
+                className="min-w-0 space-y-1"
+                role="group"
+                aria-label="企業名で取得する候補"
+              >
+                <span className="text-xs font-medium">
+                  企業名で取得：語を選んでから取得ボタンを押してください
                 </span>
-              )}
-              {!latestAcquisition &&
-                rememberedAcquisition?.result.nextPage &&
-                canWrite && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={acquiring}
-                    onClick={() => {
-                      const previous = JSON.parse(
-                        rememberedAcquisition.scope,
-                      ) as { prefecture: string; search: string };
-                      setPrefecture(previous.prefecture);
-                      setSearch(previous.search);
-                      resetPage();
-                    }}
-                  >
-                    前回の取得条件を戻す（続きから取得できます）
-                  </Button>
+                <div className="flex flex-wrap gap-2">
+                  {preset.nameHints.map((hint) => (
+                    <Button
+                      key={hint}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={acquiring}
+                      aria-pressed={search === hint}
+                      onClick={() => changeFilters({ search: hint })}
+                      className="h-7 px-2 text-xs"
+                    >
+                      {hint}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {canWrite ? (
+              <div className="flex flex-wrap items-center gap-2">
+                {fetchButton}
+                {!prefecture && !remoteSearch && (
+                  <span className="text-xs text-muted-foreground">
+                    都道府県または企業名・法人番号を指定してください
+                  </span>
                 )}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                閲覧権限のため、取得済み候補の検索のみ利用できます。候補の取得・取込は営業メンバーまたは管理者に依頼してください。
+              </p>
+            )}
+          </div>
+          {!latestAcquisition &&
+            rememberedAcquisition?.result.nextPage &&
+            canWrite && (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={acquiring}
+                onClick={() => {
+                  const previous = JSON.parse(rememberedAcquisition.scope) as {
+                    prefecture: string;
+                    search: string;
+                  };
+                  changeFilters({
+                    prefecture: previous.prefecture,
+                    search: previous.search,
+                  });
+                }}
+              >
+                前回の取得条件を戻す（続きから取得できます）
+              </Button>
+            )}
+          {search && (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span>取得済み候補も「{search}」で絞り込んでいます。</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={acquiring}
+                onClick={() => changeFilters({ search: "" })}
+                className="h-7 px-2 text-xs"
+              >
+                企業名・法人番号の条件だけ解除
+              </Button>
             </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              閲覧権限のため、取得済み候補の検索のみ利用できます。候補の取得・取込は営業メンバーまたは管理者に依頼してください。
-            </p>
           )}
           {acquiring && (
             <p role="status" className="text-xs text-muted-foreground">
@@ -507,7 +626,8 @@ export default function DiscoverCompanies() {
       </div>
 
       <section
-        className="surface overflow-hidden"
+        id="candidate-list"
+        className="surface scroll-mt-4 overflow-hidden"
         aria-labelledby="candidate-list-title"
       >
         <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
@@ -528,7 +648,7 @@ export default function DiscoverCompanies() {
             variant="ghost"
             size="sm"
             onClick={() => void rows.mutate()}
-            disabled={rows.isValidating}
+            disabled={rows.isValidating || !!filterError || filtersSettling}
           >
             <RefreshCw
               className={rows.isValidating ? "animate-spin" : undefined}
@@ -563,7 +683,14 @@ export default function DiscoverCompanies() {
             </Button>
           </div>
         )}
-        {rows.error ? (
+        {filterError ? (
+          <Empty
+            title="検索条件を確認してください"
+            description="上の入力エラーを修正すると、企業候補を検索します。"
+          />
+        ) : filtersSettling ? (
+          <Loading label="検索条件を反映中" />
+        ) : rows.error ? (
           <ErrorState error={rows.error} retry={() => void rows.mutate()} />
         ) : !data ? (
           <Loading label="企業の候補を読み込み中" />
@@ -678,6 +805,24 @@ export default function DiscoverCompanies() {
                       <p className="mt-1 font-mono text-[11px] text-muted-foreground">
                         {candidate.corporate_number}
                       </p>
+                      {candidate.business_summary && (
+                        <p
+                          className="mt-1 line-clamp-2 max-w-72 text-xs text-muted-foreground"
+                          title={candidate.business_summary}
+                        >
+                          {candidate.business_summary}
+                        </p>
+                      )}
+                      {keywords &&
+                        matchingBusinessKeywords(candidate, keywords).length >
+                          0 && (
+                          <p className="mt-1 max-w-72 text-[11px] text-muted-foreground">
+                            名称・事業内容に一致：
+                            {matchingBusinessKeywords(candidate, keywords).join(
+                              "・",
+                            )}
+                          </p>
+                        )}
                     </td>
                     <td className="max-w-60 text-xs">
                       <p
@@ -701,7 +846,7 @@ export default function DiscoverCompanies() {
                     </td>
                     <td className="whitespace-nowrap text-right text-xs">
                       {candidate.employee_number == null ? (
-                        <UnknownValue />
+                        <span className="text-muted-foreground">未確認</span>
                       ) : (
                         employeeLabel(candidate.employee_number)
                       )}
@@ -761,12 +906,14 @@ export default function DiscoverCompanies() {
             }
           />
         )}
-        <Pagination
-          page={page}
-          count={data?.count}
-          pageSize={data?.pageSize ?? 20}
-          onChange={setPage}
-        />
+        {!filterError && (
+          <Pagination
+            page={page}
+            count={data?.count}
+            pageSize={data?.pageSize ?? 20}
+            onChange={setPage}
+          />
+        )}
       </section>
       {focused && (
         <CandidateDialog

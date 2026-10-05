@@ -22,7 +22,8 @@
     "test:recovery:browser": "node tests/recovery/browser.mjs",
     "check:gbiz": "node --conditions=react-server --env-file-if-exists=.env.local scripts/check-gbiz.mjs",
     "test:discovery:browser": "node tests/recovery/discovery-e2e.mjs",
-    "test:discovery:concurrency": "node tests/recovery/discovery-concurrency.mjs"
+    "test:discovery:concurrency": "node tests/recovery/discovery-concurrency.mjs",
+    "test:targeting:browser": "node tests/recovery/targeting-e2e.mjs"
   },
   "engines": {
     "node": ">=22.0.0"

@@ -815,6 +815,8 @@ try {
 
   stage = "responsive dropdowns and existing CRM form custom value";
   await page.goto(base + "/discover");
+  // Search criteria now survive navigation; start this layout check unfiltered.
+  await page.getByRole("button", { name: "条件をクリア", exact: true }).click();
   await visibleCount(seed.length);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("combobox", { name: "都道府県", exact: true }).click();
@@ -1060,6 +1062,7 @@ try {
 
   stage = "candidate deletion leaves imported CRM and evidence intact";
   await organization(page, org);
+  await page.getByRole("button", { name: "条件をクリア", exact: true }).click();
   await searchFor(candidates.existing.corporate_number);
   await visibleCount(1);
   await page

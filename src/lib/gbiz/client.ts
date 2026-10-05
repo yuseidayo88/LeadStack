@@ -42,6 +42,7 @@ const metadataFields = [
   "industry",
   "company_url",
   "employee_number",
+  "business_summary",
 ] as const;
 type FieldMetadata = Partial<Record<(typeof metadataFields)[number], string>>;
 
@@ -55,6 +56,8 @@ export interface GbizCompany {
   industry: string[] | null;
   companyUrl: string | null;
   employeeNumber: number | null;
+  businessSummary?: string | null;
+  businessSummaryTruncated?: boolean;
   // The API has no phone field. A missing employee count is never converted to 0.
   provenance: {
     source: "gBizINFO";
@@ -126,6 +129,8 @@ function normalizeCompany(
   const industry = Array.isArray(data.industry)
     ? data.industry.map(text).filter((item): item is string => item !== null)
     : [];
+  const summary = text(data.business_summary);
+  const summaryCharacters = Array.from(summary ?? "");
   return {
     corporateNumber,
     name: text(data.name),
@@ -141,6 +146,10 @@ function normalizeCompany(
       data.employee_number >= 0
         ? data.employee_number
         : null,
+    businessSummary: summary
+      ? summaryCharacters.slice(0, 10_000).join("")
+      : null,
+    businessSummaryTruncated: summaryCharacters.length > 10_000,
     provenance: {
       source: "gBizINFO",
       requestUrl,

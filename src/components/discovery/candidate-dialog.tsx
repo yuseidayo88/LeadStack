@@ -48,6 +48,7 @@ function SourceDetails({ candidate }: { candidate: Candidate }) {
     ["name", "企業名"],
     ["location", "所在地"],
     ["industry", "業種"],
+    ["business_summary", "事業内容"],
     ["company_url", "Webサイト"],
     ["employee_number", "従業員数"],
   ];
@@ -255,6 +256,29 @@ export function CandidateDialog({
           <dt className="text-muted-foreground">従業員数</dt>
           <dd>{employeeLabel(candidate.employee_number)}</dd>
         </dl>
+        <section
+          aria-label="事業内容"
+          className="space-y-2 rounded-md border p-4 text-sm"
+        >
+          <h3 className="font-medium">事業内容</h3>
+          {candidate.business_summary ? (
+            <p className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words leading-relaxed">
+              {candidate.business_summary}
+            </p>
+          ) : (
+            <p className="text-muted-foreground">
+              事業内容は未取得または未掲載です。候補の再取得や公式サイトで確認できます。
+            </p>
+          )}
+          {candidate.business_summary_truncated && (
+            <p className="text-xs text-muted-foreground">
+              長い事業内容の一部を表示しています。全文は下の取得元リンクで確認してください。
+            </p>
+          )}
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Gビズインフォに掲載された説明です。実際の対象業務や、改善の必要性は企業への確認が必要です。
+          </p>
+        </section>
         {candidate.company_id && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-teal-50 p-3">
             <Link

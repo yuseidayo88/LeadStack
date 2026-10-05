@@ -7,7 +7,14 @@ import {
   getGbizCompany,
   searchGbizCompanies,
 } from "@/lib/gbiz/client";
-import { candidateFromGbiz, discoverySearch, object } from "./mapping";
+import {
+  candidateFromGbiz,
+  discoverySearch,
+  discoveryBusinessSearch,
+  CandidateProvenanceTooLargeError,
+  boundedCandidateProvenance,
+  object,
+} from "./mapping";
 import { industryOptions } from "./industries";
 import { enrichOfficialWebsite } from "./website-enrichment";
 import type {
@@ -19,7 +26,16 @@ import type { DiscoveryInput, DiscoveryQuery } from "./schemas";
 
 type DB = SupabaseClient<Database>;
 function candidate(row: CompanyCandidateRow): Candidate {
-  return row as Candidate;
+  const summary = object(row.provenance).businessSummary;
+  return {
+    ...row,
+    business_summary:
+      typeof summary === "string" && summary.trim()
+        ? Array.from(summary.trim()).slice(0, 10_000).join("")
+        : null,
+    business_summary_truncated:
+      object(row.provenance).businessSummaryTruncated === true,
+  } as Candidate;
 }
 export const gbizConfigured = () => Boolean(process.env.GBIZ_API_TOKEN?.trim());
 
@@ -34,12 +50,32 @@ export async function listCandidates(
       .select("*", { count: "exact", head })
       .eq("organization_id", org);
     if (input.search) q = q.or(discoverySearch(input.search));
+    if (input.businessKeywords.length)
+      q = q.or(discoveryBusinessSearch(input.businessKeywords));
     if (input.prefecture) q = q.eq("prefecture_code", input.prefecture);
     if (input.industry)
       q =
         input.industry === "unknown"
           ? q.containedBy("industry_codes", [])
-          : q.contains("industry_codes", [input.industry]);
+          : input.includeUnknownIndustry === "true"
+            ? q.or(`industry_codes.cs.{${input.industry}},industry_codes.cd.{}`)
+            : q.contains("industry_codes", [input.industry]);
+    const employeeFilters = [
+      ...(input.employeeMin === undefined
+        ? []
+        : [`employee_number.gte.${input.employeeMin}`]),
+      ...(input.employeeMax === undefined
+        ? []
+        : [`employee_number.lte.${input.employeeMax}`]),
+    ];
+    if (employeeFilters.length && input.includeUnknownEmployees === "true") {
+      q = q.or(`employee_number.is.null,and(${employeeFilters.join(",")})`);
+    } else {
+      if (input.employeeMin !== undefined)
+        q = q.gte("employee_number", input.employeeMin);
+      if (input.employeeMax !== undefined)
+        q = q.lte("employee_number", input.employeeMax);
+    }
     if (input.hasPhone === "true")
       q = q.not("phone", "is", null).neq("phone", "");
     if (input.hasWebsite === "true")
@@ -246,7 +282,14 @@ export async function acquireCandidates(
       continue;
     }
     const previous = old.get(company.corporateNumber);
-    const data = candidateFromGbiz(company, previous);
+    let data;
+    try {
+      data = candidateFromGbiz(company, previous);
+    } catch (error) {
+      if (!(error instanceof CandidateProvenanceTooLargeError)) throw error;
+      detailsFailed++;
+      continue;
+    }
     if (previous) {
       const updated = await db
         .from("company_candidates")
@@ -287,7 +330,7 @@ export async function acquireCandidates(
     page: input.page,
     nextPage:
       result.companies.length === 20 && input.page < 10 ? input.page + 1 : null,
-    message: `${result.companies.length}社の候補を確認しました。${detailsFailed ? `詳細を確認できなかった項目は未確認のまま保存しています（${detailsFailed}件）。` : ""}業種・項目の有無による絞込みは取得済み候補に適用されます。`,
+    message: `${result.companies.length}社の候補を確認しました。${detailsFailed ? `一部の詳細を取得・保存できませんでした（${detailsFailed}件）。以前の確認済み情報は保持しています。` : ""}業種・項目の有無による絞込みは取得済み候補に適用されます。`,
   };
 }
 
@@ -391,6 +434,31 @@ export async function updateCandidate(
   for (const field of ["phone", "website_url", "employee_number"] as const)
     if (row[field] !== input[field] && !overrides.includes(field))
       overrides.push(field);
+  let updatedProvenance: Json;
+  try {
+    updatedProvenance = boundedCandidateProvenance(
+      {
+        ...provenance,
+        manualOverrides: overrides,
+        manual: {
+          updatedAt: new Date().toISOString(),
+          updatedBy: userId,
+          evidence: row.enrichment_result,
+        },
+      },
+      typeof provenance.businessSummary === "string"
+        ? provenance.businessSummary
+        : null,
+      provenance.businessSummaryTruncated === true,
+    );
+  } catch (error) {
+    if (!(error instanceof CandidateProvenanceTooLargeError)) throw error;
+    throw new AppError(
+      422,
+      "candidate_evidence_too_large",
+      "出典情報が保存上限を超えています。企業情報を再取得してから編集してください。",
+    );
+  }
   const { data, error } = await db
     .from("company_candidates")
     .update({
@@ -405,15 +473,7 @@ export async function updateCandidate(
             enrichment_checked_at: null,
           }
         : {}),
-      provenance: {
-        ...provenance,
-        manualOverrides: overrides,
-        manual: {
-          updatedAt: new Date().toISOString(),
-          updatedBy: userId,
-          evidence: row.enrichment_result,
-        },
-      },
+      provenance: updatedProvenance,
     })
     .eq("organization_id", org)
     .eq("id", input.id)

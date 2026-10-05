@@ -8,24 +8,57 @@ const ids = z
   .transform((v) => [...new Set(v)]);
 const blankOptional = (value: unknown) =>
   value === "" || value === null ? undefined : value;
-export const discoveryQuery = z.object({
-  search: z.string().trim().max(200).default(""),
-  prefecture: z.preprocess(blankOptional, prefecture.optional()),
-  industry: z.preprocess(
-    blankOptional,
-    z
+const employeeBound = z.preprocess(
+  (value) => (typeof value === "string" ? value.trim() || undefined : value),
+  z
+    .union([z.string().regex(/^\d+$/).transform(Number), z.number()])
+    .pipe(z.number().int().min(0).max(2147483647))
+    .optional(),
+);
+export const discoveryQuery = z
+  .object({
+    search: z.string().trim().max(200).default(""),
+    prefecture: z.preprocess(blankOptional, prefecture.optional()),
+    industry: z.preprocess(
+      blankOptional,
+      z
+        .string()
+        .regex(/^(?:[A-T]|unknown)$/)
+        .optional(),
+    ),
+    hasPhone: z.enum(["true", "false"]).optional(),
+    hasWebsite: z.enum(["true", "false"]).optional(),
+    hasEmployees: z.enum(["true", "false"]).optional(),
+    employeeMin: employeeBound,
+    employeeMax: employeeBound,
+    includeUnknownEmployees: z.enum(["true", "false"]).default("false"),
+    includeUnknownIndustry: z.enum(["true", "false"]).default("false"),
+    businessKeywords: z
       .string()
-      .regex(/^(?:[A-T]|unknown)$/)
-      .optional(),
-  ),
-  hasPhone: z.enum(["true", "false"]).optional(),
-  hasWebsite: z.enum(["true", "false"]).optional(),
-  hasEmployees: z.enum(["true", "false"]).optional(),
-  page: z.coerce.number().int().min(1).max(10000).default(1),
-  pageSize: z.coerce.number().int().min(1).max(50).default(20),
-  sort: z.enum(["name", "fetched_at", "employee_number"]).default("fetched_at"),
-  direction: z.enum(["asc", "desc"]).default("desc"),
-});
+      .trim()
+      .max(200)
+      .default("")
+      .transform((value) => [
+        ...new Set(value.split(/[,、，\s]+/).filter(Boolean)),
+      ])
+      .pipe(z.array(z.string().min(1).max(40)).max(8)),
+    page: z.coerce.number().int().min(1).max(10000).default(1),
+    pageSize: z.coerce.number().int().min(1).max(50).default(20),
+    sort: z
+      .enum(["name", "fetched_at", "employee_number"])
+      .default("fetched_at"),
+    direction: z.enum(["asc", "desc"]).default("desc"),
+  })
+  .refine(
+    (value) =>
+      value.employeeMin === undefined ||
+      value.employeeMax === undefined ||
+      value.employeeMin <= value.employeeMax,
+    {
+      message: "従業員数の下限は上限以下にしてください",
+      path: ["employeeMax"],
+    },
+  );
 
 const website = z
   .string()

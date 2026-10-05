@@ -23,6 +23,8 @@ export type Candidate = {
   phone: string | null;
   website_url: string | null;
   employee_number: number | null;
+  business_summary?: string | null;
+  business_summary_truncated?: boolean;
   source_updated_at: string | null;
   fetched_at: string;
   updated_at: string;
