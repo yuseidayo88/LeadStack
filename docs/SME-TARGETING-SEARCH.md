@@ -51,4 +51,17 @@ Gビズへの検索は都道府県・企業名・法人番号で1回最大20社�
 
 2026-10-05、上記はすべて合格。実DBでは6,000文字の日本語・絵文字を含む説明の保存上限、手動編集、1万コードポイントのASCII・絵文字混在説明の完全保持も確認した。`npm run test:discovery:browser` の既存取込・重複確認・架電記録・出典保持・閲覧者権限・組織分離・候補削除も合格。検索条件を保存する新しい仕様に合わせ、独立した既存画面テストの開始時に明示的に条件をクリアする。
 
-公開後の結果はこの文書の末尾に追記する。
+## 本番反映・確認結果
+
+2026-10-05、本番 [企業を探す](https://leadstack-amber.vercel.app/discover) に反映した。
+
+- 実装コミット: `451120a277e0eb1cc64dad7a3cb171343d92e76c`。GitHubの `main` と `fix/auth-and-crm-quality` に保存済み。
+- Vercel: `dpl_CUrZEBeBm4GUXejUPqkjwPqHZhgK`、READY・本番エイリアス反映を確認。既存プロジェクトと既存Productionトークンを使用。
+- DBスキーマ変更・追加サービス・課金変更はない。
+- 専用の動作確認組織でログイン、設備プリセットの県保持・10〜50人指定、大企業の除外、人数・業種・語の複合検索、条件保存と再読込み、条件解除、モバイル表示を確認した。
+- 既存法人1件だけをGビズから再取得。既存候補IDを保持し、実際に取得した事業内容とそのキーワード、従業員数の一致・除外範囲での検索を確認した。今回の本番試験でCRMの書込みは行っていない。
+- 本番ブラウザーの実行時エラー・console error・APIの4xx/5xx・意図しない取得はいずれも0件。検証用のセッションだけを終了した。
+
+初回の本番試験は条件保存確認中にブラウザーのassertionで停止した（API・実行時エラーなし）。操作別の診断と同条件のAPI確認を加え、同じアプリコミットで全項目が合格した。初回停止の厳密な原因は未確定で、アプリの修正や条件の緩和は行っていない。
+
+証跡: `/workspace/handoff/targeting-unit.log`、`targeting-e2e.log`、`targeting-discovery-regression.log`、`targeting-production-smoke.log`。画面は `test-results/targeting/` と `test-results/production-targeting/`。秘密情報はこれらの報告に含めていない。
