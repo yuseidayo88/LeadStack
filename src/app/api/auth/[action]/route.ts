@@ -1,3 +1,4 @@
+import { authEmailReady, authEmailUnavailableMessage } from "@/lib/auth-email";
 import { throttleAuth } from "@/lib/auth-throttle";
 import { newPassword } from "@/lib/password-policy";
 import { hasRecentRecovery } from "@/lib/recovery";
@@ -32,6 +33,11 @@ export async function POST(
       ].includes(action)
     )
       throw new AppError(404, "not_found", "操作が見つかりません");
+    if (
+      ["signup", "reset-password", "resend-confirmation"].includes(action) &&
+      !authEmailReady()
+    )
+      throw new AppError(503, "email_not_ready", authEmailUnavailableMessage);
     const db = await createClient();
     if (action === "logout") {
       const { error } = await db.auth.signOut({ scope: "local" });

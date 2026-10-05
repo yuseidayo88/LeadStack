@@ -36,6 +36,7 @@ async function call(
 }
 beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_SITE_URL", "http://localhost:3000");
+  vi.stubEnv("AUTH_EMAIL_READY", "true");
   vi.resetAllMocks();
   mocks.getClaims.mockResolvedValue({
     data: {
@@ -332,5 +333,23 @@ test.each(["aaaaaaaaaaaa", "abcdabcdabcd", "password1234"])(
         })
       ).status,
     ).toBe(422);
+  },
+);
+
+test.each([undefined, "false", "TRUE", "1"])(
+  "mail setup %s fails closed before contacting Auth",
+  async (setting) => {
+    vi.stubEnv("AUTH_EMAIL_READY", setting);
+    for (const action of ["signup", "reset-password", "resend-confirmation"]) {
+      const r = await call(action, {
+        email: "person@example.test",
+        password: "valid-password12",
+        name: "fixture",
+      });
+      expect(r.status).toBe(503);
+      expect((await r.json()).error.code).toBe("email_not_ready");
+    }
+    expect(mocks.resetPasswordForEmail).not.toHaveBeenCalled();
+    expect(mocks.resend).not.toHaveBeenCalled();
   },
 );

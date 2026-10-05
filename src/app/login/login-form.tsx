@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { api, message } from "@/lib/client-api";
 import { safeNext } from "@/lib/navigation";
 import { Busy } from "@/components/crm/common";
-export function LoginForm() {
+export function LoginForm({ emailReady }: { emailReady: boolean }) {
   const router = useRouter();
   const params = useSearchParams();
   const [signup, setSignup] = useState(false);
@@ -183,7 +183,7 @@ export function LoginForm() {
                   : "はじめてご利用ですか？"}
                 <button
                   className="ml-2 font-medium text-primary hover:underline"
-                  disabled={busy}
+                  disabled={busy || !emailReady}
                   onClick={() => {
                     setSignup(!signup);
                     setError("");
@@ -194,7 +194,7 @@ export function LoginForm() {
               </p>
             </>
           )}
-          <LoginRecovery />
+          <LoginRecovery emailReady={emailReady} />
         </div>
       </main>
     </div>

@@ -1,10 +1,11 @@
 "use client";
+import { authEmailUnavailableMessage } from "@/lib/auth-email";
 import { useState } from "react";
 import Link from "next/link";
 import { api, message } from "@/lib/client-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-export function LoginRecovery() {
+export function LoginRecovery({ emailReady }: { emailReady: boolean }) {
   const [mode, setMode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -24,6 +25,15 @@ export function LoginRecovery() {
       setBusy(false);
     }
   }
+  if (!emailReady)
+    return (
+      <p
+        role="status"
+        className="mt-6 border-t pt-4 text-sm text-muted-foreground"
+      >
+        {authEmailUnavailableMessage}
+      </p>
+    );
   return (
     <div className="mt-6 border-t pt-4 space-y-3">
       <div className="flex flex-wrap gap-3">

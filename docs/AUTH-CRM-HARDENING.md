@@ -52,3 +52,18 @@
 
 ログ: `/workspace/handoff/hardening-{lint,typecheck,build,unit,db-authorization,crm-e2e,improvements-e2e,retry-e2e,auth-e2e}.log`。
 画面: `test-results/authenticated-e2e/`、`test-results/improvements/`（git管理外）。
+
+## メール準備状態の追加対応（4c65e49の後続変更）
+
+`AUTH_EMAIL_READY`（サーバー専用環境変数）を追加。**今回の本番は `false`**。未設定・true以外の値も停止扱い。
+
+- ログイン画面に認証メール機能の準備中と、登録・再送・再設定不可／確認済みアカウントのログイン可を常時表示。新規登録ボタンを無効化し、メール申込みフォームは表示しない。
+- アプリAPIはsignup/reset-password/resend-confirmationを503 `email_not_ready` で拒否。Auth呼出し・アカウント作成・メール申込みより前に停止する。
+- 通常ログイン・ログアウト・CRMは継続。既に発行済みの有効なリンクの検証や、検証済み復旧セッションでのパスワード保存は停止しない（新たなメール配送が不要なため）。
+- 将来、SMTPとURL設定・実配送を検証した後に `AUTH_EMAIL_READY=true` を設定して再デプロイすれば再開できる。UIにはサーバーが同じ設定の真偽を渡す。SMTP未設定を自動検出する機能ではない。
+- これはLeadStack画面/APIの運用制御であり、Supabaseの直接Auth APIやプロバイダー側signup設定を変更するものではない。メール確認必須の設定を解除しない。
+- `.env.example` にfalseを記載。認証メール有効フロー用の既存E2Eは、サーバーの `AUTH_EMAIL_READY=true` とローカルSMTP sinkを前提に実行する。
+
+今回の公開承認対象にはVercel Productionの `AUTH_EMAIL_READY=false` を追加する。本番への実設定は未実施。
+
+追加検証結果: unit/API 47件成功、lint/typecheck/production build成功。`mail-readiness-e2e.mjs` にてfalse時の画面/API拒否と既存ログイン継続、同一ビルドをtrueで再起動した場合の再開を、デスクトップ・iPhoneサイズChromium双方で確認。実メール配送なし。ログは `/workspace/handoff/mail-readiness-{unit,lint,typecheck,build,disabled-e2e,enabled-e2e}.log`。DB変更はなく、追加migrationは不要。
