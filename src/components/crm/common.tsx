@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { ApiError, message } from "@/lib/client-api";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "./searchable-select";
 export function Loading({ label = "読み込み中" }: { label?: string }) {
   return (
     <div role="status" className="space-y-4 p-6">
@@ -220,18 +221,12 @@ export function SelectFilter({
   options: { value: string; label: string }[];
 }) {
   return (
-    <select
-      className="native-select w-auto max-w-full"
-      aria-label={label}
+    <SearchableSelect
+      className="w-auto max-w-full"
+      label={label}
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-    >
-      <option value="">{label}：すべて</option>
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
+      onChange={onChange}
+      options={[{ value: "", label: `${label}：すべて` }, ...options]}
+    />
   );
 }

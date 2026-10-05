@@ -83,13 +83,13 @@ before(async () => {
 after(async () => {
   await db?.close();
 });
-test("all 16 public tables enable RLS", async () => {
+test("all 18 public tables enable RLS", async () => {
   const rows = (
     await db.query(
       "select relname,relrowsecurity from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r'",
     )
   ).rows;
-  assert.equal(rows.length, 16);
+  assert.equal(rows.length, 18);
   assert.ok(rows.every((r) => r.relrowsecurity));
 });
 test("company overview uses invoker security", async () => {

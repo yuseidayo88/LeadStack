@@ -23,6 +23,7 @@ import {
   ChevronsUpDown,
   Plus,
   Check,
+  Search,
 } from "lucide-react";
 import { api, useApi, message } from "@/lib/client-api";
 import type { Tables } from "@/lib/database.types";
@@ -173,6 +174,7 @@ function WorkspaceLoader({ children }: { children: ReactNode }) {
 const nav = [
   { href: "/dashboard", label: "ダッシュボード", icon: LayoutDashboard },
   { href: "/companies", label: "企業", icon: Building2 },
+  { href: "/discover", label: "企業を探す", icon: Search },
   { href: "/deals", label: "商談", icon: Handshake },
   { href: "/tasks", label: "タスク", icon: ListTodo },
 ];

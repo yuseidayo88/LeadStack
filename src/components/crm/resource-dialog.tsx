@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { fields, resourceNames, type Field } from "./resource-fields";
 import { Busy } from "./common";
 import { Lookup } from "./lookup";
+import { SearchableSelect } from "./searchable-select";
 import { cn } from "@/lib/utils";
 export type RecordData = { id?: string; [key: string]: unknown };
 export function ResourceDialog({
@@ -379,6 +380,25 @@ export function FieldInput({
           onChange={(e) => set(e.target.value)}
           rows={3}
           maxLength={10000}
+        />
+      ) : f.key === "industry" || f.key === "prefecture" ? (
+        <SearchableSelect
+          id={id}
+          label={f.label}
+          required={f.required}
+          aria-invalid={!!errors}
+          aria-describedby={props["aria-describedby"]}
+          value={String(value)}
+          onChange={set}
+          allowCustom={f.key === "industry"}
+          options={
+            f.suggestions
+              ? f.suggestions.map((s) => ({ value: s, label: s }))
+              : Object.entries(f.options || {}).map(([v, l]) => ({
+                  value: v,
+                  label: l,
+                }))
+          }
         />
       ) : f.type === "select" || f.type === "member" ? (
         <select

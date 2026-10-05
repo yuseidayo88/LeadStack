@@ -102,6 +102,12 @@ export default function Companies() {
         description="最終接触：接続・折返し・アポイントの架電、メール、打合せ。社内メモ・状態変更・不通は含みません。"
         action={
           <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <Link href="/discover">
+                <Search />
+                企業を探す
+              </Link>
+            </Button>
             <CompanyImport key={base} />
             {action}
           </div>

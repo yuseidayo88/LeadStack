@@ -18,9 +18,11 @@
     "format:check": "prettier --check .",
     "format": "prettier --write .",
     "test:browser": "playwright test",
-    "test:recovery": "npm test && node --test tests/recovery/database.mjs",
+    "test:recovery": "npm test && node --test tests/recovery/database.mjs tests/recovery/discovery-database.mjs",
     "test:recovery:browser": "node tests/recovery/browser.mjs",
-    "check:gbiz": "node --conditions=react-server --env-file-if-exists=.env.local scripts/check-gbiz.mjs"
+    "check:gbiz": "node --conditions=react-server --env-file-if-exists=.env.local scripts/check-gbiz.mjs",
+    "test:discovery:browser": "node tests/recovery/discovery-e2e.mjs",
+    "test:discovery:concurrency": "node tests/recovery/discovery-concurrency.mjs"
   },
   "engines": {
     "node": ">=22.0.0"

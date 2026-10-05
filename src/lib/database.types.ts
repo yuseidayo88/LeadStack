@@ -8,9 +8,59 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
+export type CompanyCandidateRow = {
+  id: string;
+  organization_id: string;
+  corporate_number: string;
+  name: string;
+  prefecture_code: string | null;
+  prefecture: string | null;
+  location: string | null;
+  industry_codes: string[];
+  industry_labels: string[];
+  phone: string | null;
+  website_url: string | null;
+  employee_number: number | null;
+  source_updated_at: string | null;
+  fetched_at: string;
+  created_at: string;
+  updated_at: string;
+  provenance: Json;
+  company_id: string | null;
+  enrichment_status: "pending" | "complete" | "unavailable" | "failed" | null;
+  enrichment_error: string | null;
+  enrichment_checked_at: string | null;
+  enrichment_result: Json;
+};
+
 export type Database = {
   public: {
     Tables: {
+      company_candidates: {
+        Row: CompanyCandidateRow;
+        Insert: Pick<
+          CompanyCandidateRow,
+          "organization_id" | "corporate_number" | "name"
+        > &
+          Partial<CompanyCandidateRow>;
+        Update: Partial<CompanyCandidateRow>;
+        Relationships: [];
+      };
+      company_candidate_imports: {
+        Row: {
+          id: string;
+          organization_id: string;
+          company_id: string;
+          corporate_number: string;
+          candidate_snapshot: Json;
+          imported_by: string | null;
+          imported_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+
       activities: {
         Row: {
           company_id: string;
@@ -944,6 +994,24 @@ export type Database = {
       };
     };
     Functions: {
+      preview_company_candidates: {
+        Args: { org: string; candidate_ids: string[] };
+        Returns: Json;
+      };
+      import_company_candidates: {
+        Args: {
+          org: string;
+          candidate_ids: string[];
+          confirmed_duplicates?: boolean;
+          review_token?: string | null;
+        };
+        Returns: Json;
+      };
+      reserve_company_discovery_request: {
+        Args: { org: string; operation: string };
+        Returns: boolean;
+      };
+
       allow_auth_attempt: {
         Args: { operation: string; subject: string };
         Returns: boolean;
