@@ -166,7 +166,7 @@ try {
       .count,
     0,
   );
-  assert.equal((await ok(root + "/companies?search=0312345678")).count, 0);
+  assert.equal((await ok(root + "/companies?search=0312345678")).count, 1);
   const contact = (
     await ok(root + "/contacts", "POST", {
       company_id: odd.id,
@@ -186,9 +186,9 @@ try {
     ).count,
     1,
   );
-  assert.equal((await ok(root + "/contacts?search=09012345678")).count, 0);
+  assert.equal((await ok(root + "/contacts?search=09012345678")).count, 1);
   log(
-    "Literal %/_ match; phone and internal-space normalization are not name-search features",
+    "Literal %/_ and normalized phone match; name internal-space normalization remains unsupported",
   );
   assert.equal(
     (await api(root + "/companies", "POST", { name: "   " })).status,
@@ -390,18 +390,24 @@ try {
     window.dispatchEvent(new Event("leadstack-org"));
   }, org);
   await expect(page.getByText("5,001 社", { exact: true })).toBeVisible();
-  await page.getByLabel("会社名を検索", { exact: true }).fill("検証企業000");
+  await page
+    .getByLabel("会社名・電話番号・法人番号を検索", { exact: true })
+    .fill("検証企業000");
   await expect(page.getByText("99 社", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "次のページ", exact: true }).click();
   await expect(
     page.getByText("99 件中 26–50 件", { exact: true }),
   ).toBeVisible();
-  await page.getByLabel("会社名を検索", { exact: true }).fill("検証企業05000");
+  await page
+    .getByLabel("会社名・電話番号・法人番号を検索", { exact: true })
+    .fill("検証企業05000");
   await expect(
-    page.getByRole("link", { name: "検証企業05000", exact: true }),
+    page.getByRole("link", { name: /^検証企業05000/ }),
   ).toBeVisible();
   await expect(page.getByText("1 件中 1–1 件", { exact: true })).toBeVisible();
-  await page.getByLabel("会社名を検索", { exact: true }).fill("ない会社");
+  await page
+    .getByLabel("会社名・電話番号・法人番号を検索", { exact: true })
+    .fill("ない会社");
   await expect(
     page.getByText("条件に一致する企業がありません", { exact: true }),
   ).toBeVisible();
@@ -441,29 +447,23 @@ try {
       /text-destructive/,
     );
   log("Browser JST midnight task is not styled overdue");
-  // Lookup has an explicit 20-result cap; search can reach records beyond that cap.
+  // Lookup pages through all candidates; search can reach distant records.
   await page.goto(base + "/tasks?period=all");
   await page.getByRole("button", { name: "タスクを追加", exact: true }).click();
   await page
     .getByRole("dialog")
     .getByRole("combobox", { name: "企業", exact: true })
     .click();
-  await expect(
-    page.getByText("上位20件を表示。名前で絞り込んでください。", {
-      exact: true,
-    }),
-  ).toBeVisible();
-  await page.getByPlaceholder("企業を検索…").fill("検証企業05000");
-  await page
-    .getByRole("option", { name: "検証企業05000", exact: true })
-    .click();
+  await expect(page.getByText(/件中 1–20 件/)).toBeVisible();
+  await page.getByLabel("企業の候補を検索").fill("検証企業05000");
+  await page.getByRole("option", { name: /^検証企業05000/ }).click();
   await expect(
     page
       .getByRole("dialog")
       .getByRole("combobox", { name: "企業", exact: true }),
   ).toContainText("検証企業05000");
   log(
-    "Lookup exposes its 20-result cap and can select the 5,000th company by search",
+    "Lookup displays 20 per page and can select the 5,000th company by search",
   );
 
   if (process.env.EXPECT_CONFLICT === "true") {

@@ -1,4 +1,5 @@
 "use client";
+import { phoneHref } from "@/lib/crm/search";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Building2, Phone, Globe, MapPin } from "lucide-react";
@@ -131,7 +132,7 @@ export default function CompanyDetail() {
                   <div className="flex flex-wrap gap-2">
                     {c.phone && (
                       <Button asChild variant="outline" size="sm">
-                        <a href={`tel:${c.phone.replace(/[^+\d]/g, "")}`}>
+                        <a href={phoneHref(c.phone)}>
                           <Phone />
                           {c.phone}
                         </a>

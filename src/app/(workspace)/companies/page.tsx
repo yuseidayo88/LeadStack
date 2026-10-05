@@ -1,4 +1,6 @@
 "use client";
+import { ActivityDialog } from "@/components/crm/activity";
+import { phoneHref } from "@/lib/crm/search";
 import { CompanyImport } from "@/components/crm/company-import";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -110,9 +112,9 @@ export default function Companies() {
           <div className="relative min-w-52 flex-1 md:max-w-sm">
             <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
             <Input
-              aria-label="会社名を検索"
+              aria-label="会社名・電話番号・法人番号を検索"
               className="bg-white pl-9"
-              placeholder="会社名を検索…"
+              placeholder="会社名・電話番号・法人番号…"
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
@@ -259,6 +261,7 @@ export default function Companies() {
                         )}
                       </th>
                     ))}
+                  {canWrite && <th>架電</th>}
                 </tr>
               </thead>
               <tbody>
@@ -270,7 +273,10 @@ export default function Companies() {
                       selected.includes(c.id) ? "selected" : undefined
                     }
                     onClick={(e) => {
-                      if (!(e.target as HTMLElement).closest("a,button,input"))
+                      if (
+                        e.currentTarget.contains(e.target as Node) &&
+                        !(e.target as HTMLElement).closest("a,button,input")
+                      )
                         router.push(`/companies/${c.id}`);
                     }}
                   >
@@ -319,7 +325,16 @@ export default function Companies() {
                     )}
                     {has("phone") && (
                       <td className="whitespace-nowrap font-mono text-xs">
-                        {c.phone || "—"}
+                        {phoneHref(c.phone) ? (
+                          <a
+                            className="hover:text-primary hover:underline"
+                            href={phoneHref(c.phone)}
+                          >
+                            {c.phone}
+                          </a>
+                        ) : (
+                          c.phone || "—"
+                        )}
                       </td>
                     )}
                     {has("owner") && (
@@ -356,6 +371,15 @@ export default function Companies() {
                         {c.last_contact_at
                           ? dateTime(c.last_contact_at, true)
                           : "未接触"}
+                      </td>
+                    )}
+                    {canWrite && (
+                      <td>
+                        <ActivityDialog
+                          companyId={c.id}
+                          companyName={c.name}
+                          phone={c.phone}
+                        />
                       </td>
                     )}
                   </tr>

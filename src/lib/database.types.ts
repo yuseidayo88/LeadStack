@@ -886,6 +886,18 @@ export type Database = {
       };
     };
     Views: {
+      company_search: {
+        Row: Database["public"]["Views"]["company_overview"]["Row"] & {
+          search_phone: string | null;
+        };
+        Relationships: Database["public"]["Views"]["company_overview"]["Relationships"];
+      };
+      contact_search: {
+        Row: Database["public"]["Tables"]["contacts"]["Row"] & {
+          search_phone: string | null;
+        };
+        Relationships: Database["public"]["Tables"]["contacts"]["Relationships"];
+      };
       company_overview: {
         Row: {
           address: string | null;

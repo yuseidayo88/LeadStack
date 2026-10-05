@@ -1,3 +1,4 @@
+import { directorySearch } from "./search";
 import { matchesCreatedRecord } from "./create-retry";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
@@ -42,14 +43,21 @@ export async function listRecords(
   let query =
     resource === "companies"
       ? db
-          .from("company_overview")
+          .from("company_search")
           .select("*", { count: "exact" })
           .eq("organization_id", org)
-      : db
-          .from(resource)
-          .select("*", { count: "exact" })
-          .eq("organization_id", org);
-  if (options.search)
+      : resource === "contacts"
+        ? db
+            .from("contact_search")
+            .select("*", { count: "exact" })
+            .eq("organization_id", org)
+        : db
+            .from(resource)
+            .select("*", { count: "exact" })
+            .eq("organization_id", org);
+  if (options.search && (resource === "companies" || resource === "contacts"))
+    query = query.or(directorySearch(resource, options.search));
+  else if (options.search)
     query = query.ilike(
       searchable[resource],
       `%${options.search.replace(/[\\%_]/g, "\\$&")}%`,

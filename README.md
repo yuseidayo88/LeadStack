@@ -64,3 +64,9 @@ npm run test:recovery:browser
 `feature/workflow-improvements` に架電の次行動、日次画面、CSV確認取込、ヒアリングからの提案下書き、認証復旧を追加。上記12/18件は回収時点の記録です。現在の `test:recovery` は単体/API等33件＋DB28件です。追加SQL1件が必要で、本番適用・push・公開は未実施です。
 
 [変更仕様・検証・マイグレーションとメール設定](docs/WORKFLOW-IMPROVEMENTS.md) を参照してください。一般ユーザー向けのメール配信には既存SMTPの利用可否確認と再設定callback URLの許可が必要です。
+
+## 最新の未公開開発状況（2026-10-05）
+
+ブランチ `fix/auth-and-crm-quality` に企業/担当者の電話検索、法人番号/メール検索、同名候補のページ送りと補足表示、企業一覧からの架電記録を追加しました。最新の検証は単体/API51件・DB/RLS34件と実ローカルAPI/ブラウザ、lint/typecheck/buildが成功。未公開SQLは計4本です。
+
+[検索・架電の変更と検証](docs/SEARCH-CALL-WORKFLOW.md) を参照してください。上記の旧件数・旧ブランチ名は各回収/検証時点の記録です。

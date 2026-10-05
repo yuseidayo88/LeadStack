@@ -48,10 +48,12 @@ export function ActivityDialog({
   companyId,
   phone,
   initialType = "call",
+  companyName,
 }: {
   companyId: string;
   phone?: string | null;
   initialType?: string;
+  companyName?: string;
 }) {
   const { base, canWrite, members, profile, refresh } = useWorkspace();
   const router = useRouter();
@@ -142,14 +144,20 @@ export function ActivityDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button size="sm">
+        <Button
+          size="sm"
+          variant={companyName ? "outline" : "default"}
+          aria-label={companyName ? `${companyName}の架電を記録` : undefined}
+        >
           {initialType === "call" ? <Phone /> : <Plus />}
           {initialType === "call" ? "架電を記録" : "活動を追加"}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-[600px]">
         <DialogHeader>
-          <DialogTitle>営業活動を記録</DialogTitle>
+          <DialogTitle>
+            {companyName ? `${companyName}の営業活動を記録` : "営業活動を記録"}
+          </DialogTitle>
           <DialogDescription>
             会話の内容と次のアクションを残しましょう。日時は日本時間です。
           </DialogDescription>

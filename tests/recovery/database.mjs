@@ -574,6 +574,8 @@ test("revoked or missing sessions lose table/view/private-preview and definer RP
       for (const t of [
         "companies",
         "company_overview",
+        "company_search",
+        "contact_search",
         "profiles",
         "improvement_types",
         "organization_members",
@@ -653,3 +655,83 @@ test("CSV direct RPC frequency guard is enforced", () =>
     for (let i = 0; i < 20; i++) await previewImport(csvRows("limit-" + i));
     await denied(() => previewImport(csvRows("too-many")), "P0429");
   }));
+
+test("search projections normalize fullwidth phones while preserving original values", async () => {
+  await db.query("update companies set phone=$1 where id=$2", [
+    "０３（１２３４）－５６７８",
+    company,
+  ]);
+  await db.query("update contacts set phone=$1 where id=$2", [
+    "０９０－１２３４－５６７８",
+    contact,
+  ]);
+  await as("owner", async () => {
+    assert.equal(
+      await scalar("select search_phone from company_search where id=$1", [
+        company,
+      ]),
+      "0312345678",
+    );
+    assert.equal(
+      await scalar("select phone from company_search where id=$1", [company]),
+      "０３（１２３４）－５６７８",
+    );
+    assert.equal(
+      await scalar("select search_phone from contact_search where id=$1", [
+        contact,
+      ]),
+      "09012345678",
+    );
+  });
+});
+test("search views use invoker security, deny anonymous access and have SELECT-only authenticated grants", async () => {
+  for (const view of ["company_search", "contact_search"]) {
+    assert.ok(
+      (
+        await scalar("select reloptions from pg_class where oid=$1::regclass", [
+          view,
+        ])
+      ).includes("security_invoker=true"),
+    );
+    assert.equal(
+      await scalar("select has_table_privilege('anon',$1,'SELECT')", [view]),
+      false,
+    );
+    for (const operation of ["INSERT", "UPDATE", "DELETE"])
+      assert.equal(
+        await scalar("select has_table_privilege('authenticated',$1,$2)", [
+          view,
+          operation,
+        ]),
+        false,
+      );
+  }
+  await as("other", async () => {
+    assert.equal(
+      await scalar("select count(*)::int from company_search where id=$1", [
+        company,
+      ]),
+      0,
+    );
+    assert.equal(
+      await scalar("select count(*)::int from contact_search where id=$1", [
+        contact,
+      ]),
+      0,
+    );
+  });
+  await as("viewer", async () => {
+    assert.equal(
+      await scalar("select count(*)::int from company_search where id=$1", [
+        company,
+      ]),
+      1,
+    );
+    assert.equal(
+      await scalar("select count(*)::int from contact_search where id=$1", [
+        contact,
+      ]),
+      1,
+    );
+  });
+});
