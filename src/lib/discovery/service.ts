@@ -44,10 +44,17 @@ export async function listCandidates(
   org: string,
   input: DiscoveryQuery,
 ): Promise<DiscoveryListResponse> {
+  const summaryView = input.view === "summary";
+  // Keep evidence and enrichment payloads off the table response. The detail
+  // endpoint loads them only when a candidate is opened. JSON path projection
+  // also avoids sending the full provenance object across the DB connection.
+  const projection = summaryView
+    ? "id,organization_id,corporate_number,name,prefecture_code,prefecture,location,industry_codes,industry_labels,phone,website_url,employee_number,source_updated_at,fetched_at,updated_at,created_at,company_id,enrichment_status,enrichment_error,enrichment_checked_at,business_summary:provenance->>businessSummary,business_summary_truncated:provenance->businessSummaryTruncated"
+    : "*";
   function filtered(head = false) {
     let q = db
       .from("company_candidates")
-      .select("*", { count: "exact", head })
+      .select(projection, { count: "exact", head })
       .eq("organization_id", org);
     if (input.search) q = q.or(discoverySearch(input.search));
     if (input.businessKeywords.length)
@@ -132,7 +139,29 @@ export async function listCandidates(
     count = result.count ?? count;
     rows = result.data ?? [];
   }
-  const data = rows.map(candidate);
+  const data: Candidate[] = (
+    rows as unknown as (CompanyCandidateRow & {
+      business_summary?: string | null;
+      business_summary_truncated?: boolean;
+    })[]
+  ).map((row) => {
+    if (!summaryView) return candidate(row);
+    const summary = row.business_summary ?? "";
+    const searchable = `${row.name} ${summary}`.toLocaleLowerCase("ja");
+    return {
+      ...row,
+      list_summary: true,
+      provenance: {},
+      enrichment_result: null,
+      business_summary: summary
+        ? Array.from(summary).slice(0, 240).join("")
+        : null,
+      business_summary_truncated: row.business_summary_truncated === true,
+      matched_business_keywords: input.businessKeywords.filter((term) =>
+        searchable.includes(term.toLocaleLowerCase("ja")),
+      ),
+    };
+  });
   if (data.length) {
     const matches = await db
       .from("companies")
@@ -218,16 +247,21 @@ export async function acquireCandidates(
       "gbiz_not_configured",
       "企業情報の取得設定がまだ完了していません。保存済みの候補は検索できます。",
     );
+  const started = Date.now();
+  const signal = AbortSignal.timeout(25_000);
   await reserveRequest(db, org, "acquire");
   let result;
   try {
-    result = await searchGbizCompanies({
-      prefecture: input.prefecture,
-      name: input.name,
-      corporateNumber: input.corporateNumber,
-      page: input.page,
-      limit: 20,
-    });
+    result = await searchGbizCompanies(
+      {
+        prefecture: input.prefecture,
+        name: input.name,
+        corporateNumber: input.corporateNumber,
+        page: input.page,
+        limit: 20,
+      },
+      { signal },
+    );
   } catch (error) {
     upstreamError(error);
   }
@@ -246,10 +280,10 @@ export async function acquireCandidates(
   const details = [...result.companies];
   let cursor = 0,
     detailsFailed = 0;
-  const deadline = Date.now() + 32_000;
+  const deadline = started + 20_000;
   let stopDetails = false;
   await Promise.all(
-    Array.from({ length: 4 }, async () => {
+    Array.from({ length: 1 }, async () => {
       while (cursor < details.length) {
         const index = cursor++;
         if (stopDetails || Date.now() >= deadline) {
@@ -257,14 +291,16 @@ export async function acquireCandidates(
           continue;
         }
         try {
-          const detail = await getGbizCompany(details[index].corporateNumber);
+          const detail = await getGbizCompany(details[index].corporateNumber, {
+            signal,
+          });
           if (detail) details[index] = detail;
           else detailsFailed++;
         } catch (error) {
           detailsFailed++;
           if (
             error instanceof GbizError &&
-            ["unauthorized", "rate_limited"].includes(error.code)
+            ["unauthorized", "rate_limited", "cancelled"].includes(error.code)
           )
             stopDetails = true;
         }
@@ -365,6 +401,10 @@ async function linkedCandidate(db: DB, org: string, row: CompanyCandidateRow) {
     crm_company_name: data?.name ?? null,
     crm_company_phone: data?.phone ?? null,
   };
+}
+
+export async function getCandidateDetail(db: DB, org: string, id: string) {
+  return linkedCandidate(db, org, await getCandidate(db, org, id));
 }
 
 export async function enrichCandidate(db: DB, org: string, id: string) {

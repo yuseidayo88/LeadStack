@@ -15,9 +15,70 @@ const employeeBound = z.preprocess(
     .pipe(z.number().int().min(0).max(2147483647))
     .optional(),
 );
+const businessKeywords = z
+  .string()
+  .trim()
+  .max(200)
+  .default("")
+  .transform((value) => [...new Set(value.split(/[,、，\s]+/).filter(Boolean))])
+  .pipe(z.array(z.string().min(1).max(40)).max(8));
+export const scanCriteria = z
+  .strictObject({
+    prefecture: z.preprocess(blankOptional, prefecture.optional()),
+    name: z.preprocess(
+      blankOptional,
+      z.string().trim().min(1).max(200).optional(),
+    ),
+    corporateNumber: z.preprocess(
+      blankOptional,
+      z
+        .string()
+        .regex(/^\d{13}$/)
+        .optional(),
+    ),
+    industry: z.preprocess(
+      blankOptional,
+      z
+        .string()
+        .regex(/^(?:[A-T]|unknown)$/)
+        .optional(),
+    ),
+    employeeMin: employeeBound,
+    employeeMax: employeeBound,
+    includeUnknownEmployees: z.boolean().default(true),
+    includeUnknownIndustry: z.boolean().default(false),
+    businessKeywords: businessKeywords.transform((terms) => terms.join(" ")),
+    hasPhone: z.boolean().default(false),
+    hasWebsite: z.boolean().default(false),
+    hasEmployees: z.boolean().default(false),
+  })
+  .refine(
+    (value) =>
+      value.employeeMin === undefined ||
+      value.employeeMax === undefined ||
+      value.employeeMin <= value.employeeMax,
+    {
+      message: "従業員数の下限は上限以下にしてください",
+      path: ["employeeMax"],
+    },
+  )
+  .refine(
+    (value) =>
+      Boolean(
+        value.prefecture ||
+        value.name ||
+        value.corporateNumber ||
+        value.industry ||
+        value.employeeMin !== undefined ||
+        value.employeeMax !== undefined ||
+        value.businessKeywords,
+      ),
+    "都道府県・業種・従業員数・事業キーワードのいずれかを指定してください",
+  );
 export const discoveryQuery = z
   .object({
     search: z.string().trim().max(200).default(""),
+    view: z.enum(["full", "summary"]).default("full"),
     prefecture: z.preprocess(blankOptional, prefecture.optional()),
     industry: z.preprocess(
       blankOptional,
@@ -33,15 +94,7 @@ export const discoveryQuery = z
     employeeMax: employeeBound,
     includeUnknownEmployees: z.enum(["true", "false"]).default("false"),
     includeUnknownIndustry: z.enum(["true", "false"]).default("false"),
-    businessKeywords: z
-      .string()
-      .trim()
-      .max(200)
-      .default("")
-      .transform((value) => [
-        ...new Set(value.split(/[,、，\s]+/).filter(Boolean)),
-      ])
-      .pipe(z.array(z.string().min(1).max(40)).max(8)),
+    businessKeywords,
     page: z.coerce.number().int().min(1).max(10000).default(1),
     pageSize: z.coerce.number().int().min(1).max(50).default(20),
     sort: z
@@ -79,6 +132,11 @@ const website = z
   }, "httpまたはhttpsの公式サイトURLを入力してください");
 
 export const discoveryInput = z.discriminatedUnion("action", [
+  z.strictObject({
+    action: z.literal("scan"),
+    criteria: scanCriteria,
+    resumeToken: z.string().min(1).max(32_768).optional(),
+  }),
   z
     .strictObject({
       action: z.literal("acquire"),

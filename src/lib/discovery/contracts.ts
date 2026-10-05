@@ -11,6 +11,8 @@ export type EnrichmentProposal = {
 };
 
 export type Candidate = {
+  list_summary?: true;
+  matched_business_keywords?: string[];
   id: string;
   organization_id: string;
   corporate_number: string;
@@ -56,6 +58,43 @@ export type AcquireResponse = {
   page: number;
   nextPage: number | null;
   message: string;
+};
+
+export type ScanCriteria = {
+  prefecture?: string;
+  name?: string;
+  corporateNumber?: string;
+  industry?: string;
+  employeeMin?: number;
+  employeeMax?: number;
+  includeUnknownEmployees?: boolean;
+  includeUnknownIndustry?: boolean;
+  businessKeywords?: string;
+  hasPhone?: boolean;
+  hasWebsite?: boolean;
+  hasEmployees?: boolean;
+};
+
+export type ScanEvent = {
+  type: "progress" | "complete" | "paused" | "error";
+  scanned: number;
+  matched: number;
+  target: number;
+  saved: number;
+  detailsFailed: number;
+  unknownEmployees: number;
+  unknownIndustry: number;
+  matchedIds: string[];
+  resumeToken: string | null;
+  nextAllowedAt: string;
+  reason?:
+    | "target"
+    | "scan_limit"
+    | "exhausted"
+    | "time_limit"
+    | "upstream_error"
+    | "cancelled";
+  message?: string;
 };
 
 export type ImportPreview = {

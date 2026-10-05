@@ -1032,13 +1032,16 @@ describe("discovery service tenant and failure behavior", () => {
       nextPage: null,
     });
     expect(JSON.stringify(result)).not.toContain(privateText);
-    expect(searchGbizCompanies).toHaveBeenCalledExactlyOnceWith({
-      prefecture: "13",
-      name: undefined,
-      corporateNumber: undefined,
-      page: 2,
-      limit: 20,
-    });
+    expect(searchGbizCompanies).toHaveBeenCalledExactlyOnceWith(
+      {
+        prefecture: "13",
+        name: undefined,
+        corporateNumber: undefined,
+        page: 2,
+        limit: 20,
+      },
+      { signal: expect.any(AbortSignal) },
+    );
     expect(getGbizCompany).toHaveBeenCalledTimes(2);
     expect(db.rpc).toHaveBeenCalledExactlyOnceWith(
       "reserve_company_discovery_request",

@@ -1,11 +1,12 @@
 "use client";
 
 import { useRef, useState } from "react";
+import useSWR from "swr";
 import Link from "next/link";
 import { Globe, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import type { Candidate } from "@/lib/discovery/contracts";
-import { api, message } from "@/lib/client-api";
+import { api, message, type ApiError } from "@/lib/client-api";
 import { useWorkspace } from "@/components/layout/workspace";
 import { ActivityDialog } from "@/components/crm/activity";
 import { Busy } from "@/components/crm/common";
@@ -119,17 +120,71 @@ function SourceDetails({ candidate }: { candidate: Candidate }) {
   );
 }
 
-export function CandidateDialog({
-  candidate: initial,
-  open,
-  onOpenChange,
-  onUpdated,
-}: {
+type CandidateDialogProps = {
   candidate: Candidate;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onUpdated: (candidate: Candidate) => Promise<void>;
-}) {
+};
+
+export function CandidateDialog(props: CandidateDialogProps) {
+  const { base } = useWorkspace();
+  const details = useSWR<{ candidate: Candidate }, ApiError>(
+    props.open && props.candidate.list_summary
+      ? `${base}/company-discovery/${props.candidate.id}`
+      : null,
+    (url: string) => api<{ candidate: Candidate }>(url),
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      shouldRetryOnError: false,
+    },
+  );
+  if (!props.open) return null;
+  const candidate = props.candidate.list_summary
+    ? details.data?.candidate
+    : props.candidate;
+  if (!candidate || (props.candidate.list_summary && details.isValidating)) {
+    return (
+      <Dialog open onOpenChange={props.onOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{props.candidate.name}</DialogTitle>
+            <DialogDescription>企業情報と出典を確認します。</DialogDescription>
+          </DialogHeader>
+          {details.error ? (
+            <div className="space-y-3">
+              <p role="alert" className="text-sm text-destructive">
+                {message(details.error)}
+              </p>
+              <Button variant="outline" onClick={() => void details.mutate()}>
+                詳細を再読み込み
+              </Button>
+            </div>
+          ) : (
+            <p role="status" className="text-sm text-muted-foreground">
+              詳細を読み込み中…
+            </p>
+          )}
+        </DialogContent>
+      </Dialog>
+    );
+  }
+  return (
+    <CandidateDialogContent
+      {...props}
+      candidate={candidate}
+      key={candidate.id}
+    />
+  );
+}
+
+function CandidateDialogContent({
+  candidate: initial,
+  open,
+  onOpenChange,
+  onUpdated,
+}: CandidateDialogProps) {
   const { base, canWrite } = useWorkspace();
   const [candidate, setCandidate] = useState(initial);
   const [phone, setPhone] = useState(initial.phone ?? "");
