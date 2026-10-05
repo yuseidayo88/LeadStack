@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { requireOrganization } from "@/lib/auth";
 import { handle, readJson, sameOrigin } from "@/lib/http";
 import { resourceSchema } from "@/lib/crm/schemas";
@@ -18,6 +19,10 @@ export async function PATCH(request: Request, context: Context) {
   return handle(async () => {
     const { org, resource, id } = await context.params;
     const input = await readJson(request);
+    const header = request.headers.get("If-Match");
+    const version = header
+      ? z.iso.datetime({ offset: true }).parse(header.replace(/^"|"$/g, ""))
+      : undefined;
     const { db } = await requireOrganization(org, true);
     return Response.json({
       data: await updateRecord(
@@ -26,6 +31,7 @@ export async function PATCH(request: Request, context: Context) {
         resourceSchema.parse(resource),
         id,
         input,
+        version,
       ),
     });
   });

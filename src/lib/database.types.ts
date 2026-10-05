@@ -654,6 +654,7 @@ export type Database = {
       pain_points: {
         Row: {
           company_id: string;
+          updated_at: string;
           created_at: string;
           description: string | null;
           id: string;
@@ -663,6 +664,7 @@ export type Database = {
         };
         Insert: {
           company_id: string;
+          updated_at?: string;
           created_at?: string;
           description?: string | null;
           id?: string;
@@ -672,6 +674,7 @@ export type Database = {
         };
         Update: {
           company_id?: string;
+          updated_at?: string;
           created_at?: string;
           description?: string | null;
           id?: string;

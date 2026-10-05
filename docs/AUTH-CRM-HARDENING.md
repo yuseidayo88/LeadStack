@@ -67,3 +67,5 @@
 今回の公開承認対象にはVercel Productionの `AUTH_EMAIL_READY=false` を追加する。本番への実設定は未実施。
 
 追加検証結果: unit/API 47件成功、lint/typecheck/production build成功。`mail-readiness-e2e.mjs` にてfalse時の画面/API拒否と既存ログイン継続、同一ビルドをtrueで再起動した場合の再開を、デスクトップ・iPhoneサイズChromium双方で確認。実メール配送なし。ログは `/workspace/handoff/mail-readiness-{unit,lint,typecheck,build,disabled-e2e,enabled-e2e}.log`。DB変更はなく、追加migrationは不要。
+
+業務追加検証で古い編集・範囲外ページ・日付表示・一覧性能を修正。公開候補には第3のmigration `20261005014821_record_edit_versions.sql` が追加された。以前の「2本」の承認対象は更新が必要。詳細は `CRM-PRACTICAL-VERIFICATION.md` を参照。

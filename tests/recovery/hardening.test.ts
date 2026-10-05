@@ -37,3 +37,17 @@ test("production auth cookies are Secure, HttpOnly, SameSite=Lax", () => {
   vi.stubEnv("NEXT_PUBLIC_SITE_URL", "http://localhost:3005");
   expect(authCookieOptions().secure).toBe(false);
 });
+
+test("JST day boundaries and form dates do not depend on the server timezone", async () => {
+  const { dayRange, tokyoDate } = await import("@/lib/dates");
+  const { toTimestamp, localInputDate } = await import("@/lib/crm/display");
+  expect(tokyoDate(new Date("2026-10-04T14:59:59Z"))).toBe("2026-10-04");
+  expect(tokyoDate(new Date("2026-10-04T15:00:00Z"))).toBe("2026-10-05");
+  expect(dayRange("2026-10-05")).toEqual({
+    start: "2026-10-04T15:00:00.000Z",
+    end: "2026-10-05T15:00:00.000Z",
+  });
+  expect(toTimestamp("2026-10-05T00:00")).toBe("2026-10-04T15:00:00.000Z");
+  expect(localInputDate("2026-10-04T15:00:00+00:00")).toBe("2026-10-05T00:00");
+  expect(dayRange("2028-02-29").end).toBe("2028-02-29T15:00:00.000Z");
+});

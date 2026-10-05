@@ -37,7 +37,7 @@ type Task = Tables<"tasks"> & {
 export function TaskComplete({
   task,
 }: {
-  task: Pick<Tables<"tasks">, "id" | "title" | "status">;
+  task: Pick<Tables<"tasks">, "id" | "title" | "status" | "updated_at">;
 }) {
   const { base, canWrite, refresh } = useWorkspace();
   const [busy, setBusy] = useState(false);
@@ -52,9 +52,16 @@ export function TaskComplete({
       onClick={async () => {
         setBusy(true);
         try {
-          await api(`${base}/tasks/${task.id}`, "PATCH", {
-            status: done ? "todo" : "completed",
-          });
+          await api(
+            `${base}/tasks/${task.id}`,
+            "PATCH",
+            {
+              status: done ? "todo" : "completed",
+            },
+            undefined,
+            undefined,
+            task.updated_at,
+          );
           toast.success(done ? "未完了に戻しました" : "タスクを完了しました");
           await refresh();
         } catch (e) {
@@ -245,7 +252,7 @@ export function TasksList() {
                           </StatusBadge>
                         </td>
                         <td
-                          className={`whitespace-nowrap text-xs ${t.status === "todo" && t.due_at && t.due_at < start ? "text-destructive" : "text-muted-foreground"}`}
+                          className={`whitespace-nowrap text-xs ${t.status === "todo" && t.due_at && Date.parse(t.due_at) < Date.parse(start) ? "text-destructive" : "text-muted-foreground"}`}
                         >
                           {dateTime(t.due_at)}
                         </td>

@@ -1,3 +1,4 @@
+import { matchesCreatedRecord } from "./create-retry";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { AppError, databaseError } from "@/lib/errors";
@@ -93,6 +94,20 @@ export async function listRecords(
     })
     .order("id")
     .range(from, from + options.pageSize - 1);
+  if (error?.code === "PGRST103" && options.page > 1) {
+    const first: { count: number | null } = await listRecords(
+      db,
+      org,
+      resource,
+      { ...options, page: 1, pageSize: 1 },
+    );
+    return {
+      data: [],
+      count: first.count,
+      page: options.page,
+      pageSize: options.pageSize,
+    };
+  }
   if (error) databaseError(error);
   if ((resource === "deals" || resource === "tasks") && data?.length) {
     const linked = data as unknown as {
@@ -285,6 +300,7 @@ export async function updateRecord(
   resource: Resource,
   id: string,
   input: unknown,
+  expectedVersion?: string,
 ) {
   uuid.parse(id);
   parseRecord(resource, input, true);
@@ -295,10 +311,19 @@ export async function updateRecord(
         .update(schemas.companies.partial().parse(input))
         .eq("organization_id", org)
         .eq("id", id)
+        .match(expectedVersion ? { updated_at: expectedVersion } : {})
         .select()
         .maybeSingle();
       if (error) databaseError(error);
-      if (!data) throw new AppError(404, "not_found", "データが見つかりません");
+      if (!data)
+        return resolveUpdateConflict(
+          db,
+          org,
+          resource,
+          id,
+          input,
+          expectedVersion,
+        );
       return data;
     }
     case "contacts": {
@@ -307,10 +332,19 @@ export async function updateRecord(
         .update(schemas.contacts.partial().parse(input))
         .eq("organization_id", org)
         .eq("id", id)
+        .match(expectedVersion ? { updated_at: expectedVersion } : {})
         .select()
         .maybeSingle();
       if (error) databaseError(error);
-      if (!data) throw new AppError(404, "not_found", "データが見つかりません");
+      if (!data)
+        return resolveUpdateConflict(
+          db,
+          org,
+          resource,
+          id,
+          input,
+          expectedVersion,
+        );
       return data;
     }
     case "tasks": {
@@ -319,10 +353,19 @@ export async function updateRecord(
         .update(schemas.tasks.partial().parse(input))
         .eq("organization_id", org)
         .eq("id", id)
+        .match(expectedVersion ? { updated_at: expectedVersion } : {})
         .select()
         .maybeSingle();
       if (error) databaseError(error);
-      if (!data) throw new AppError(404, "not_found", "データが見つかりません");
+      if (!data)
+        return resolveUpdateConflict(
+          db,
+          org,
+          resource,
+          id,
+          input,
+          expectedVersion,
+        );
       return data;
     }
     case "deals": {
@@ -331,10 +374,19 @@ export async function updateRecord(
         .update(schemas.deals.partial().parse(input))
         .eq("organization_id", org)
         .eq("id", id)
+        .match(expectedVersion ? { updated_at: expectedVersion } : {})
         .select()
         .maybeSingle();
       if (error) databaseError(error);
-      if (!data) throw new AppError(404, "not_found", "データが見つかりません");
+      if (!data)
+        return resolveUpdateConflict(
+          db,
+          org,
+          resource,
+          id,
+          input,
+          expectedVersion,
+        );
       return data;
     }
     case "business_processes": {
@@ -343,10 +395,19 @@ export async function updateRecord(
         .update(schemas.business_processes.partial().parse(input))
         .eq("organization_id", org)
         .eq("id", id)
+        .match(expectedVersion ? { updated_at: expectedVersion } : {})
         .select()
         .maybeSingle();
       if (error) databaseError(error);
-      if (!data) throw new AppError(404, "not_found", "データが見つかりません");
+      if (!data)
+        return resolveUpdateConflict(
+          db,
+          org,
+          resource,
+          id,
+          input,
+          expectedVersion,
+        );
       return data;
     }
     case "company_tools": {
@@ -355,10 +416,19 @@ export async function updateRecord(
         .update(schemas.company_tools.partial().parse(input))
         .eq("organization_id", org)
         .eq("id", id)
+        .match(expectedVersion ? { updated_at: expectedVersion } : {})
         .select()
         .maybeSingle();
       if (error) databaseError(error);
-      if (!data) throw new AppError(404, "not_found", "データが見つかりません");
+      if (!data)
+        return resolveUpdateConflict(
+          db,
+          org,
+          resource,
+          id,
+          input,
+          expectedVersion,
+        );
       return data;
     }
     case "pain_points": {
@@ -367,10 +437,19 @@ export async function updateRecord(
         .update(schemas.pain_points.partial().parse(input))
         .eq("organization_id", org)
         .eq("id", id)
+        .match(expectedVersion ? { updated_at: expectedVersion } : {})
         .select()
         .maybeSingle();
       if (error) databaseError(error);
-      if (!data) throw new AppError(404, "not_found", "データが見つかりません");
+      if (!data)
+        return resolveUpdateConflict(
+          db,
+          org,
+          resource,
+          id,
+          input,
+          expectedVersion,
+        );
       return data;
     }
     case "proposals": {
@@ -379,10 +458,19 @@ export async function updateRecord(
         .update(schemas.proposals.partial().parse(input))
         .eq("organization_id", org)
         .eq("id", id)
+        .match(expectedVersion ? { updated_at: expectedVersion } : {})
         .select()
         .maybeSingle();
       if (error) databaseError(error);
-      if (!data) throw new AppError(404, "not_found", "データが見つかりません");
+      if (!data)
+        return resolveUpdateConflict(
+          db,
+          org,
+          resource,
+          id,
+          input,
+          expectedVersion,
+        );
       return data;
     }
   }
@@ -435,6 +523,19 @@ export async function listActivities(
     .order("occurred_at", { ascending: false })
     .order("id")
     .range(from, from + options.pageSize - 1);
+  if (error?.code === "PGRST103" && options.page > 1) {
+    const first: { count: number | null } = await listActivities(db, org, {
+      ...options,
+      page: 1,
+      pageSize: 1,
+    });
+    return {
+      data: [],
+      count: first.count,
+      page: options.page,
+      pageSize: options.pageSize,
+    };
+  }
   if (error) databaseError(error);
   const ids = data.filter((a) => a.type === "call").map((a) => a.id);
   const details = ids.length
@@ -448,4 +549,24 @@ export async function listActivities(
     page: options.page,
     pageSize: options.pageSize,
   };
+}
+
+async function resolveUpdateConflict(
+  db: DbClient,
+  org: string,
+  resource: Resource,
+  id: string,
+  input: unknown,
+  version?: string,
+) {
+  if (!version) throw new AppError(404, "not_found", "データが見つかりません");
+  const existing = await getRecord(db, org, resource, id);
+  // A lost successful response may be safely acknowledged without writing twice.
+  if (matchesCreatedRecord(parseRecord(resource, input, true), existing))
+    return existing;
+  throw new AppError(
+    409,
+    "edit_conflict",
+    "別の操作で更新されています。入力内容を控え、編集を閉じて一覧を再読み込みしてから変更してください",
+  );
 }

@@ -135,6 +135,9 @@ function RecordForm({
   });
   const submitting = useRef(false);
   const creationId = useRef("");
+  const editVersion = useRef(
+    record?.updated_at ? String(record.updated_at) : undefined,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
@@ -211,6 +214,7 @@ function RecordForm({
         data,
         undefined,
         record ? undefined : creationId.current,
+        editVersion.current,
       );
       toast.success(`${resourceNames[resource]}を保存しました`);
       saved(result.data);

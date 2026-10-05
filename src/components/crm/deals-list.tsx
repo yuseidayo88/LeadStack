@@ -45,7 +45,14 @@ export function DealsList({ companyId }: { companyId?: string }) {
   async function changeStage(id: string, value: string) {
     setBusy(id);
     try {
-      await api(`${base}/deals/${id}`, "PATCH", { stage: value });
+      await api(
+        `${base}/deals/${id}`,
+        "PATCH",
+        { stage: value },
+        undefined,
+        undefined,
+        result.data?.data.find((d) => d.id === id)?.updated_at,
+      );
       toast.success("ステージを更新しました");
       await refresh();
     } catch (e) {

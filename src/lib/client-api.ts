@@ -16,6 +16,7 @@ export async function api<T>(
   body?: unknown,
   signal?: AbortSignal,
   idempotencyKey?: string,
+  expectedVersion?: string,
 ): Promise<T> {
   const response = await fetch(path, {
     method,
@@ -23,6 +24,9 @@ export async function api<T>(
     headers: {
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+      ...(expectedVersion
+        ? { "If-Match": JSON.stringify(expectedVersion) }
+        : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal,
