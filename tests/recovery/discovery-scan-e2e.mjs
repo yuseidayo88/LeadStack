@@ -3,6 +3,7 @@
 import { chromium, expect } from "@playwright/test";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { controlPath, logPath } from "./discovery-gbiz-preload.mjs";
 import assert from "node:assert/strict";
 
@@ -205,24 +206,35 @@ async function newOrg(suffix) {
   organizations.push(org);
   return { org, name, endpoint: `/api/organizations/${org}/company-discovery` };
 }
+let lastIssuedAt = 0;
+function scanPayload(criteria, resumeToken) {
+  // The durable lease rejects equal/older timestamps and replayed run IDs.
+  // Each HTTP chunk is a new attempt even when it resumes the same cursor.
+  lastIssuedAt = Math.max(Date.now(), lastIssuedAt + 1);
+  return {
+    action: "scan",
+    criteria,
+    runId: randomUUID(),
+    issuedAt: new Date(lastIssuedAt).toISOString(),
+    ...(resumeToken ? { resumeToken } : {}),
+  };
+}
 async function scan(endpoint, criteria, resumeToken, abortAfter) {
+  const payload = scanPayload(criteria, resumeToken);
+  const previousCalls = (await upstreamLog()).length;
   const result = await page.evaluate(
-    async ({ endpoint, criteria, resumeToken, abortAfter }) => {
+    async ({ endpoint, payload, abortAfter }) => {
       const controller = new AbortController();
       const events = [];
       let status = 0;
       let streamType = "";
       try {
-        const response = await fetch(endpoint, {
+        const response = await fetch(endpoint + "/scan", {
           method: "POST",
           credentials: "same-origin",
           signal: controller.signal,
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "scan",
-            criteria,
-            ...(resumeToken ? { resumeToken } : {}),
-          }),
+          body: JSON.stringify(payload),
         });
         status = response.status;
         streamType = response.headers.get("content-type") || "";
@@ -264,7 +276,7 @@ async function scan(endpoint, criteria, resumeToken, abortAfter) {
         };
       }
     },
-    { endpoint, criteria, resumeToken, abortAfter },
+    { endpoint, payload, abortAfter },
   );
   assert.equal(
     result.status,
@@ -273,7 +285,84 @@ async function scan(endpoint, criteria, resumeToken, abortAfter) {
   );
   assert.ok(result.streamType.includes("application/x-ndjson"));
   assert.ok(result.events.length > 0);
-  return result;
+  if (result.cancelled) {
+    // Transport abort alone is not a stop receipt. Await the persisted stop
+    // before resetting the local quota or starting the next synthetic chunk.
+    const acknowledgement = await request(
+      page,
+      endpoint + "/scan/cancel",
+      "POST",
+      { runId: payload.runId },
+    );
+    assert.equal(acknowledgement.data.runId, payload.runId);
+    assert.ok(
+      ["cancelled", "finished", "expired"].includes(
+        acknowledgement.data.status,
+      ),
+    );
+  }
+  const calls = (await upstreamLog()).slice(previousCalls);
+  const detailCount = calls.filter((call) => call.kind === "detail").length;
+  const searchCount = calls.filter((call) => call.kind === "search").length;
+  assert.ok(detailCount <= 5, "Every HTTP chunk permits at most five details");
+  assert.ok(searchCount <= 2, "Every HTTP chunk permits at most two searches");
+  const terminal = result.events.at(-1);
+  if (!result.cancelled) {
+    assert.notEqual(
+      terminal.type,
+      "progress",
+      "A complete stream has a terminal event",
+    );
+    if (terminal.reason === "chunk_limit") {
+      assert.equal(terminal.type, "paused");
+      assert.ok(terminal.resumeToken);
+      assert.ok(
+        detailCount === 5 || searchCount === 2,
+        "Chunk limit identifies the actual provider-call budget",
+      );
+    }
+  }
+  return { ...result, runId: payload.runId, detailCount, searchCount };
+}
+
+async function scanUntilTerminal(endpoint, criteria, resumeToken) {
+  const org = endpoint.match(
+    /^\/api\/organizations\/([^/]+)\/company-discovery$/,
+  )?.[1];
+  assert.ok(
+    organizations.includes(org),
+    "Only an own local fixture may skip the cooldown",
+  );
+  const chunks = [],
+    events = [];
+  let token = resumeToken;
+  for (let index = 0; index < 45; index++) {
+    if (index > 0) releaseLocalQuota(org);
+    const chunk = await scan(endpoint, criteria, token);
+    chunks.push(chunk);
+    events.push(...chunk.events);
+    const terminal = chunk.events.at(-1);
+    if (
+      terminal.type !== "paused" ||
+      !["chunk_limit", "time_limit"].includes(terminal.reason)
+    ) {
+      assert.equal(
+        new Set(chunks.map((item) => item.runId)).size,
+        chunks.length,
+      );
+      return { events, chunks };
+    }
+    assert.ok(
+      terminal.resumeToken,
+      "A bounded chunk retains its exact resume position",
+    );
+    assert.ok(
+      terminal.scanned > chunk.events[0].scanned,
+      "The deterministic local fixture must make progress in each continued chunk",
+    );
+    token = terminal.resumeToken;
+  }
+  assert.fail("Synthetic scan exceeded 45 bounded chunks");
 }
 
 try {
@@ -296,7 +385,23 @@ try {
     includeUnknownIndustry: true,
     businessKeywords: "設備 保守",
   };
-  const first = await scan(primary.endpoint, criteria);
+  const legacy = await request(
+    page,
+    primary.endpoint,
+    "POST",
+    scanPayload(criteria),
+    409,
+  );
+  assert.equal(legacy.error.code, "scan_endpoint_changed");
+  assert.equal(
+    (await upstreamLog()).length,
+    0,
+    "Legacy endpoint starts no provider requests",
+  );
+  const first = await scanUntilTerminal(primary.endpoint, criteria);
+  assert.ok(first.chunks.length > 1);
+  assert.equal(first.chunks[0].events.at(-1).reason, "chunk_limit");
+  assert.equal(first.chunks[0].events.at(-1).scanned, 5);
   const firstDone = first.events.at(-1);
   assert.equal(firstDone.type, "complete");
   assert.equal(firstDone.reason, "target");
@@ -346,38 +451,38 @@ try {
   assert.ok(firstMatches.data.some((row) => row.employee_number === null));
   assert.ok(firstMatches.data.some((row) => row.industry_codes.length === 0));
   pass(
-    "Actual NDJSON progress reaches 20 persisted matches without a company name; unknown employees and industries remain visible",
+    "Dedicated scan endpoint reaches 20 persisted matches across bounded chunks; legacy endpoint is rejected and unknown fields remain visible",
   );
 
   stage = "rate limit, signed checkpoint scope and exact page-tail resume";
   await request(
     page,
-    primary.endpoint,
+    primary.endpoint + "/scan",
     "POST",
-    { action: "scan", criteria, resumeToken: firstDone.resumeToken },
+    scanPayload(criteria, firstDone.resumeToken),
     429,
   );
   releaseLocalQuota(primary.org);
   await request(
     page,
-    primary.endpoint,
+    primary.endpoint + "/scan",
     "POST",
-    {
-      action: "scan",
-      criteria: { ...criteria, employeeMax: 40 },
-      resumeToken: firstDone.resumeToken,
-    },
+    scanPayload({ ...criteria, employeeMax: 40 }, firstDone.resumeToken),
     409,
   );
   const otherOrg = await newOrg("署名別組織");
   await request(
     page,
-    otherOrg.endpoint,
+    otherOrg.endpoint + "/scan",
     "POST",
-    { action: "scan", criteria, resumeToken: firstDone.resumeToken },
+    scanPayload(criteria, firstDone.resumeToken),
     409,
   );
-  const resumed = await scan(primary.endpoint, criteria, firstDone.resumeToken);
+  const resumed = await scanUntilTerminal(
+    primary.endpoint,
+    criteria,
+    firstDone.resumeToken,
+  );
   const completed = resumed.events.at(-1);
   assert.equal(completed.type, "complete");
   assert.equal(completed.reason, "exhausted");
@@ -407,7 +512,7 @@ try {
   stage = "known-only employee bounds and provider errors";
   const known = await newOrg("人数既知");
   await control();
-  const knownResult = await scan(known.endpoint, {
+  const knownResult = await scanUntilTerminal(known.endpoint, {
     ...criteria,
     includeUnknownEmployees: false,
   });
@@ -561,7 +666,7 @@ try {
   await page.waitForTimeout(300);
   releaseLocalQuota(cancelled.org);
   await control();
-  const afterCancel = await scan(
+  const afterCancel = await scanUntilTerminal(
     cancelled.endpoint,
     criteria,
     cursor.resumeToken,
@@ -570,18 +675,15 @@ try {
   assert.equal(new Set(afterCancel.events.at(-1).matchedIds).size, 20);
   const capped = await newOrg("200社上限");
   await control("no-match");
-  let capResult = await scan(capped.endpoint, {
+  const capResult = await scanUntilTerminal(capped.endpoint, {
     prefecture: "13",
     industry: "D",
   });
-  for (let i = 0; capResult.events.at(-1).type === "paused" && i < 4; i++) {
-    releaseLocalQuota(capped.org);
-    capResult = await scan(
-      capped.endpoint,
-      { prefecture: "13", industry: "D" },
-      capResult.events.at(-1).resumeToken,
-    );
-  }
+  assert.equal(
+    capResult.chunks.length,
+    40,
+    "200 positions require forty five-detail chunks",
+  );
   const cap = capResult.events.at(-1);
   assert.equal(cap.type, "complete");
   assert.equal(cap.reason, "scan_limit");
@@ -594,7 +696,7 @@ try {
   );
   assert.equal((await request(page, capped.endpoint)).count, 200);
   pass(
-    "Aborted fetch resumes saved matches; a no-match search checks exactly 200 companies and stops with no continuation token",
+    "Acknowledged aborted scan resumes saved matches; forty bounded chunks inspect exactly 200 nonmatching companies and return a terminal limit",
   );
 
   stage = "cross-organization scan and detail authorization";
@@ -604,9 +706,9 @@ try {
   await login(otherPage, users.other);
   await request(
     otherPage,
-    primary.endpoint,
+    primary.endpoint + "/scan",
     "POST",
-    { action: "scan", criteria },
+    scanPayload(criteria),
     403,
   );
   await request(
@@ -656,9 +758,9 @@ try {
   );
   await request(
     otherPage,
-    primary.endpoint,
+    primary.endpoint + "/scan",
     "POST",
-    { action: "scan", criteria },
+    scanPayload(criteria),
     403,
   );
   await organization(otherPage, primary.org);

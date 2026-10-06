@@ -15,9 +15,21 @@ import {
 import type { ScanCriteria, ScanEvent } from "./contracts";
 import { openScanCursor, signScanCursor } from "./scan-cursor";
 import { reserveRequest } from "./service";
+import {
+  authorizeScanStep,
+  commitScanCandidate,
+  finishScanRun,
+  ScanRunStopped,
+  startScanRun,
+} from "./scan-jobs";
 
 type DB = SupabaseClient<Database>;
-type Input = { criteria: ScanCriteria; resumeToken?: string };
+type Input = {
+  criteria: ScanCriteria;
+  resumeToken?: string;
+  runId: string;
+  issuedAt: string;
+};
 const CHUNK_MS = 25_000;
 const START_NEXT_CALL_MS = 20_000;
 
@@ -91,57 +103,6 @@ async function currentCandidates(
   return new Map((result.data ?? []).map((row) => [row.corporate_number, row]));
 }
 
-async function saveCandidate(
-  db: DB,
-  organization: string,
-  data: ReturnType<typeof candidateFromGbiz>,
-  previous: CompanyCandidateRow | undefined,
-  signal: AbortSignal,
-) {
-  const query = previous
-    ? db
-        .from("company_candidates")
-        .update(data)
-        .eq("organization_id", organization)
-        .eq("id", previous.id)
-        .eq("updated_at", previous.updated_at)
-    : db.from("company_candidates").upsert(
-        { ...data, organization_id: organization },
-        {
-          onConflict: "organization_id,corporate_number",
-          ignoreDuplicates: true,
-        },
-      );
-  const result = await query.select("*").abortSignal(signal);
-  if (result.error) {
-    if (["P0500", "P0429"].includes(result.error.code))
-      throw new AppError(
-        409,
-        "candidate_limit",
-        "保存できる候補の上限（5,000社）に達しました。",
-      );
-    databaseError(result.error);
-  }
-  if (result.data?.[0]) return { row: result.data[0], saved: true };
-  // Concurrent manual editing or another acquisition wins. Match the saved
-  // values rather than counting provider data that was never committed.
-  const current = await db
-    .from("company_candidates")
-    .select("*")
-    .eq("organization_id", organization)
-    .eq("corporate_number", data.corporate_number)
-    .abortSignal(signal)
-    .maybeSingle();
-  if (current.error) databaseError(current.error);
-  if (!current.data)
-    throw new AppError(
-      409,
-      "candidate_changed",
-      "候補が変更されました。同じ位置から再開してください。",
-    );
-  return { row: current.data, saved: false };
-}
-
 function message(error: unknown) {
   if (error instanceof GbizError || error instanceof AppError)
     return error.message;
@@ -161,8 +122,6 @@ export async function startCompanyScan(
     input.resumeToken,
     started,
   );
-  await reserveRequest(db, organization, "acquire");
-  const nextAllowedAt = new Date(Date.now() + 30_100).toISOString();
   const stopped = new AbortController();
   const deadline = new AbortController();
   const timer = setTimeout(
@@ -174,6 +133,57 @@ export async function startCompanyScan(
     deadline.signal,
     ...(requestSignal ? [requestSignal] : []),
   ]);
+  // Every HTTP chunk gets its own durable lease. Creating the lease before
+  // reserving the quota also supersedes old work when a newer search starts.
+  let runStarted = false;
+  let cleanup: Promise<void> | undefined;
+  const finishRun = () => {
+    if (!runStarted) return Promise.resolve();
+    cleanup ??= finishScanRun(db, organization, input.runId).then(
+      () => undefined,
+      () => {
+        // No secrets/request bodies in logs; the DB deadline remains binding.
+        console.error("Discovery scan cleanup could not be acknowledged");
+      },
+    );
+    return cleanup;
+  };
+  const onAbort = () => {
+    void finishRun();
+  };
+  try {
+    if (signal.aborted) throw new ScanRunStopped("cancelled");
+    await startScanRun(
+      db,
+      organization,
+      input.runId,
+      input.issuedAt,
+      new Date(started + CHUNK_MS).toISOString(),
+      signal,
+    );
+    runStarted = true;
+    // A transport may ignore abort while a provider request is in flight.
+    // Close the durable lease immediately rather than awaiting that response.
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) {
+      onAbort();
+      throw new ScanRunStopped("cancelled");
+    }
+    await reserveRequest(db, organization, "acquire", signal);
+    if (signal.aborted) throw new ScanRunStopped("cancelled");
+  } catch (error) {
+    clearTimeout(timer);
+    signal.removeEventListener("abort", onAbort);
+    await finishRun();
+    if (error instanceof ScanRunStopped)
+      throw new AppError(
+        409,
+        "scan_cancelled",
+        "検索は停止済みです。続きから再開してください。",
+      );
+    throw error;
+  }
+  const nextAllowedAt = new Date(Date.now() + 30_100).toISOString();
   const encoder = new TextEncoder();
   let closed = false;
   const stream = new ReadableStream<Uint8Array>({
@@ -263,6 +273,14 @@ export async function startCompanyScan(
           if (!cursor.numbers.length) {
             // Unknown employee counts must stay eligible. Provider bounds are
             // used only when the caller explicitly excludes unknown values.
+            await authorizeScanStep(
+              db,
+              organization,
+              input.runId,
+              "search",
+              signal,
+            );
+            if (signal.aborted) throw new ScanRunStopped("cancelled");
             const result = await searchGbizCompanies(
               {
                 prefecture: input.criteria.prefecture,
@@ -306,6 +324,14 @@ export async function startCompanyScan(
             emit("progress");
             continue;
           }
+          await authorizeScanStep(
+            db,
+            organization,
+            input.runId,
+            "detail",
+            signal,
+          );
+          if (signal.aborted) throw new ScanRunStopped("cancelled");
           let detail;
           try {
             // The provider requests sequential API calls. No parallel detail
@@ -347,9 +373,11 @@ export async function startCompanyScan(
             emit("progress");
             continue;
           }
-          const persisted = await saveCandidate(
+          if (signal.aborted) throw new ScanRunStopped("cancelled");
+          const persisted = await commitScanCandidate(
             db,
             organization,
+            input.runId,
             mapped,
             current.get(number),
             signal,
@@ -371,25 +399,30 @@ export async function startCompanyScan(
       };
       void run()
         .catch((error: unknown) => {
-          if (signal.aborted)
+          if (error instanceof ScanRunStopped) emit("paused", error.reason);
+          else if (signal.aborted)
             emit(
               "paused",
               deadline.signal.aborted ? "time_limit" : "cancelled",
             );
           else emit("error", "upstream_error", message(error));
         })
-        .finally(() => {
+        .finally(async () => {
           clearTimeout(timer);
+          signal.removeEventListener("abort", onAbort);
+          await finishRun();
           if (!closed) {
             closed = true;
             controller.close();
           }
         });
     },
-    cancel() {
+    async cancel() {
       closed = true;
       stopped.abort();
       clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      await finishRun();
     },
   });
   return new Response(stream, {

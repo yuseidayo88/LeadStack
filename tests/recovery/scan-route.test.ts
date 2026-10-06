@@ -16,8 +16,12 @@ import { listCandidates } from "@/lib/discovery/service";
 import { AppError } from "@/lib/errors";
 import {
   GET,
-  POST,
+  POST as SHARED_POST,
 } from "@/app/api/organizations/[org]/company-discovery/route";
+import { POST } from "@/app/api/organizations/[org]/company-discovery/scan/route";
+import { POST as CANCEL_POST } from "@/app/api/organizations/[org]/company-discovery/scan/cancel/route";
+import { cancelScanRun } from "@/lib/discovery/scan-jobs";
+vi.mock("@/lib/discovery/scan-jobs", () => ({ cancelScanRun: vi.fn() }));
 
 const org = "11111111-1111-4111-8111-111111111111";
 const context = { params: Promise.resolve({ org }) };
@@ -28,7 +32,11 @@ function request(body: unknown, origin = "https://leadstack.example") {
     {
       method: "POST",
       headers: { "content-type": "application/json", origin },
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        runId: org,
+        issuedAt: "2026-10-06T01:00:00.000Z",
+        ...(body as object),
+      }),
     },
   );
 }
@@ -167,4 +175,92 @@ test("list timing headers expose durations only and forward the lightweight proj
     org,
     expect.objectContaining({ view: "summary" }),
   );
+});
+
+test("legacy scan entry cannot bypass durable dedicated endpoint", async () => {
+  const response = await SHARED_POST(
+    request({ action: "scan", criteria: { prefecture: "13" } }),
+    context,
+  );
+  expect(response.status).toBe(409);
+  expect(startCompanyScan).not.toHaveBeenCalled();
+});
+
+test.each(["acquire", "enrich", "remove"])(
+  "dedicated scan rejects unrelated %s actions",
+  async (action) => {
+    const response = await POST(
+      request({ action, criteria: { prefecture: "13" } }),
+      context,
+    );
+    expect(response.status).toBe(422);
+    expect(startCompanyScan).not.toHaveBeenCalled();
+  },
+);
+
+test.each([
+  { runId: "bad" },
+  { runId: undefined },
+  { issuedAt: "bad" },
+  { issuedAt: undefined },
+])("run identity is mandatory and validated: %j", async (extra) => {
+  const response = await POST(
+    request({ action: "scan", criteria: { prefecture: "13" }, ...extra }),
+    context,
+  );
+  expect(response.status).toBe(422);
+  expect(startCompanyScan).not.toHaveBeenCalled();
+});
+
+function cancelRequest(origin = "https://leadstack.example") {
+  return new Request(
+    `https://leadstack.example/api/organizations/${org}/company-discovery/scan/cancel`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", origin },
+      body: JSON.stringify({ runId: org }),
+    },
+  );
+}
+
+test.each(["cancelled", "finished", "expired"] as const)(
+  "cancel ACK returns durable terminal %s only after authenticated RPC",
+  async (status) => {
+    vi.mocked(cancelScanRun).mockResolvedValue({ run_id: org, status });
+    const response = await CANCEL_POST(cancelRequest(), context);
+    expect(requireOrganization).toHaveBeenCalledExactlyOnceWith(org, true);
+    expect(cancelScanRun).toHaveBeenCalledExactlyOnceWith(db, org, org);
+    expect(await response.json()).toEqual({ data: { runId: org, status } });
+  },
+);
+
+test("cancel endpoint checks CSRF before writing a tombstone", async () => {
+  const response = await CANCEL_POST(
+    cancelRequest("https://foreign.example"),
+    context,
+  );
+  expect(response.status).toBe(403);
+  expect(requireOrganization).not.toHaveBeenCalled();
+  expect(cancelScanRun).not.toHaveBeenCalled();
+});
+
+test.each([401, 403])(
+  "cancel endpoint refuses unauthorized actor %s",
+  async (status) => {
+    vi.mocked(requireOrganization).mockRejectedValue(
+      new AppError(status, "forbidden", "権限を確認してください"),
+    );
+    const response = await CANCEL_POST(cancelRequest(), context);
+    expect(response.status).toBe(status);
+    expect(cancelScanRun).not.toHaveBeenCalled();
+  },
+);
+
+test("failed cancel RPC never returns an acknowledgement", async () => {
+  vi.mocked(cancelScanRun).mockRejectedValue(
+    new AppError(500, "database_error", "保存に失敗しました"),
+  );
+  const response = await CANCEL_POST(cancelRequest(), context);
+  expect(response.status).toBe(500);
+  expect(await response.json()).not.toHaveProperty("data");
 });

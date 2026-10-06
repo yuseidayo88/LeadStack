@@ -409,7 +409,12 @@ describe("condition-based scan input", () => {
     { name: "東京設備" },
     { corporateNumber },
   ])("accepts a search scope without requiring a company name: %j", (input) => {
-    const parsed = discoveryInput.parse({ action: "scan", criteria: input });
+    const parsed = discoveryInput.parse({
+      action: "scan",
+      runId: "11111111-1111-4111-8111-111111111111",
+      issuedAt: "2026-10-06T01:00:00.000Z",
+      criteria: input,
+    });
     expect(parsed.action).toBe("scan");
     if (parsed.action !== "scan") throw new Error("Unexpected action");
     expect(parsed.criteria).toMatchObject({
@@ -503,6 +508,8 @@ describe("condition-based scan input", () => {
     expect(
       discoveryInput.safeParse({
         action: "scan",
+        runId: "11111111-1111-4111-8111-111111111111",
+        issuedAt: "2026-10-06T01:00:00.000Z",
         criteria: { industry: "D" },
         resumeToken: "a".repeat(32_768),
       }).success,
@@ -517,6 +524,8 @@ describe("condition-based scan input", () => {
       expect(
         discoveryInput.safeParse({
           action: "scan",
+          runId: "11111111-1111-4111-8111-111111111111",
+          issuedAt: "2026-10-06T01:00:00.000Z",
           criteria: { industry: "D" },
           ...input,
         }).success,

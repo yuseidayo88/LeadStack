@@ -2,7 +2,6 @@ import { requireOrganization } from "@/lib/auth";
 import { AppError, databaseError } from "@/lib/errors";
 import { handle, readJson } from "@/lib/http";
 import { discoveryInput, discoveryQuery } from "@/lib/discovery/schemas";
-import { startCompanyScan } from "@/lib/discovery/scan";
 import {
   acquireCandidates,
   enrichCandidate,
@@ -39,7 +38,11 @@ export async function POST(request: Request, context: Context) {
     const { org } = await context.params;
     const { db, user } = await requireOrganization(org, true);
     if (input.action === "scan")
-      return startCompanyScan(db, org, input, request.signal);
+      throw new AppError(
+        409,
+        "scan_endpoint_changed",
+        "企業検索画面を再読み込みしてから検索してください。",
+      );
     if (input.action === "acquire")
       return Response.json(await acquireCandidates(db, org, input));
     if (input.action === "enrich")

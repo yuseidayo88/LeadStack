@@ -1,6 +1,6 @@
 # 条件から未知の企業を探す改善（ローカル検証）
 
-この変更はローカル実装・検証のみ。本番の更新、GitHubへのpush、権限追加、課金・サービス追加、追加バックアップは行わない。基点は `fbb779d`、ローカルブランチは `fix/conditional-discovery`。既存V1を継続する。
+基点は `fbb779d`、ローカルブランチは `fix/conditional-discovery`。既存V1を継続する。以下の初期検証後、一度公開した `715a522` は停止不具合により本番を切戻した。追加の停止修正と本番適用条件は [DISCOVERY-SCAN-CANCELLATION.md](./DISCOVERY-SCAN-CANCELLATION.md) を参照。本番の再公開は行っていない。
 
 ## 変更内容
 

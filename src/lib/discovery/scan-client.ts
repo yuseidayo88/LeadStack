@@ -9,6 +9,95 @@ export type ScanCheckpoint = {
   savedAt: number;
 };
 
+export type ActiveScanRun = {
+  version: 1;
+  base: string;
+  runId: string;
+  tabId: string;
+  actorId: string;
+  issuedAt: string;
+};
+
+const uuid = /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i;
+
+export function activeScanStorageKey(base: string) {
+  return `leadstack.discovery.active.v1.${base}`;
+}
+
+export function parseActiveScanRun(
+  value: string | null,
+  expectedBase: string,
+): ActiveScanRun | null {
+  if (!value || value.length > 2000) return null;
+  try {
+    const run = JSON.parse(value) as ActiveScanRun;
+    if (
+      run?.version !== 1 ||
+      run.base !== expectedBase ||
+      typeof run.runId !== "string" ||
+      !uuid.test(run.runId) ||
+      typeof run.tabId !== "string" ||
+      !uuid.test(run.tabId) ||
+      typeof run.actorId !== "string" ||
+      !uuid.test(run.actorId) ||
+      typeof run.issuedAt !== "string" ||
+      !Number.isFinite(Date.parse(run.issuedAt))
+    )
+      return null;
+    return run;
+  } catch {
+    return null;
+  }
+}
+
+// An old request may acknowledge cancellation after another tab has started.
+// Never remove that newer tab's recovery marker.
+export function clearActiveScanRun(
+  storage: Pick<Storage, "getItem" | "removeItem">,
+  run: ActiveScanRun,
+) {
+  const key = activeScanStorageKey(run.base);
+  if (parseActiveScanRun(storage.getItem(key), run.base)?.runId === run.runId)
+    storage.removeItem(key);
+}
+
+export async function requestScanCancellation(
+  run: ActiveScanRun,
+  fetcher: typeof fetch = fetch,
+) {
+  const response = await fetcher(`${run.base}/company-discovery/scan/cancel`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ runId: run.runId }),
+    keepalive: true,
+    // This is deliberately independent of the already-aborted streaming request.
+    signal: AbortSignal.timeout(10_000),
+  });
+  const result: unknown = response.ok ? await response.json() : null;
+  const data =
+    result && typeof result === "object" && "data" in result
+      ? result.data
+      : null;
+  if (
+    !data ||
+    typeof data !== "object" ||
+    !("runId" in data) ||
+    data.runId !== run.runId ||
+    !("status" in data) ||
+    !["cancelled", "finished", "expired"].includes(String(data.status))
+  )
+    throw new Error("検索の停止を確認できませんでした。");
+}
+
+export function shouldContinueScan(event: ScanEvent) {
+  return (
+    event.type === "paused" &&
+    (event.reason === "time_limit" || event.reason === "chunk_limit") &&
+    !!event.resumeToken
+  );
+}
+
 export function scanCriteriaFromFilters(
   filters: DiscoveryFilters,
 ): ScanCriteria {
@@ -103,6 +192,7 @@ export function parseScanEvent(value: unknown): ScanEvent | null {
       "scan_limit",
       "exhausted",
       "time_limit",
+      "chunk_limit",
       "upstream_error",
       "cancelled",
     ].includes(event.reason)
@@ -173,6 +263,8 @@ export async function readScanEvents(
   let terminal: ScanEvent | null = null;
   const accept = (line: string) => {
     if (!line.trim()) return;
+    if (terminal)
+      throw new Error("検索の終了後に予期しない応答を受信しました。");
     if (line.length > 64000)
       throw new Error("検索の応答が大きすぎるため停止しました。");
     let raw: unknown;

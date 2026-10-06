@@ -21,7 +21,25 @@ import {
 } from "@/lib/gbiz/client";
 import { reserveRequest } from "@/lib/discovery/service";
 import { scanCriteria } from "@/lib/discovery/schemas";
-import { startCompanyScan } from "@/lib/discovery/scan";
+import { startCompanyScan as startActualScan } from "@/lib/discovery/scan";
+import { randomUUID } from "node:crypto";
+function startCompanyScan(
+  db: Parameters<typeof startActualScan>[0],
+  organization: string,
+  input: Omit<Parameters<typeof startActualScan>[2], "runId" | "issuedAt">,
+  signal?: AbortSignal,
+) {
+  return startActualScan(
+    db,
+    organization,
+    {
+      ...input,
+      runId: randomUUID(),
+      issuedAt: new Date().toISOString(),
+    },
+    signal,
+  );
+}
 import { AppError } from "@/lib/errors";
 
 const org = "11111111-1111-4111-8111-111111111111";
@@ -160,10 +178,107 @@ function database() {
     };
     return builder;
   };
+  const job = {
+    status: "active",
+    detailLimit: Infinity,
+    searchLimit: Infinity,
+    details: 0,
+    searches: 0,
+    finished: 0,
+    permits: [] as string[],
+    signals: [] as AbortSignal[],
+  };
+  const rpc = (method: string, args: Record<string, unknown>) => {
+    let signal: AbortSignal | undefined;
+    const builder = {
+      abortSignal(value: AbortSignal) {
+        signal = value;
+        job.signals.push(value);
+        return builder;
+      },
+      then(
+        resolve: (value: unknown) => unknown,
+        reject?: (error: unknown) => unknown,
+      ) {
+        return Promise.resolve()
+          .then(async () => {
+            if (signal?.aborted)
+              return {
+                data: null,
+                error: { code: "57014", message: "cancelled" },
+              };
+            const state = {
+              run_id: args.run_id,
+              status: job.status,
+              started: true,
+              allowed: true,
+            };
+            if (method === "start_discovery_scan_run") {
+              job.details = 0;
+              job.searches = 0;
+            } else if (method === "authorize_discovery_scan_step") {
+              job.permits.push(String(args.kind));
+              if (job.status === "active") {
+                const key = args.kind === "detail" ? "details" : "searches";
+                const limit =
+                  args.kind === "detail" ? job.detailLimit : job.searchLimit;
+                if (job[key] >= limit) {
+                  state.status = "chunk_limit";
+                  state.allowed = false;
+                } else job[key]++;
+              }
+            } else if (method === "finish_discovery_scan_run") {
+              job.finished++;
+              state.status = job.status === "active" ? "finished" : job.status;
+            } else if (method === "commit_discovery_scan_candidate") {
+              if (job.status !== "active")
+                return {
+                  data: { status: job.status, row: null, saved: false },
+                  error: null,
+                };
+              const candidate = args.candidate as Record<string, unknown>;
+              const existing = rows.get(String(candidate.corporate_number));
+              const query =
+                existing && args.expected_updated_at
+                  ? from("company_candidates")
+                      .update(candidate)
+                      .eq("organization_id", args.org)
+                      .eq("id", existing.id)
+                      .eq("updated_at", args.expected_updated_at)
+                  : from("company_candidates").upsert({
+                      ...candidate,
+                      organization_id: args.org,
+                    });
+              if (signal) query.abortSignal(signal);
+              const result = (await query) as {
+                data: CompanyCandidateRow[];
+                error: unknown;
+              };
+              if (result.error) return result;
+              return {
+                data: {
+                  status: "active",
+                  row:
+                    result.data?.[0] ??
+                    rows.get(String(candidate.corporate_number)) ??
+                    null,
+                  saved: Boolean(result.data?.[0]),
+                },
+                error: null,
+              };
+            }
+            return { data: state, error: null };
+          })
+          .then(resolve, reject);
+      },
+    };
+    return builder;
+  };
   return {
     rows,
     calls,
-    db: { from } as unknown as Parameters<typeof startCompanyScan>[0],
+    job,
+    db: { from, rpc } as unknown as Parameters<typeof startCompanyScan>[0],
   };
 }
 
@@ -660,4 +775,195 @@ describe("streaming company discovery", () => {
     expect(searchGbizCompanies).not.toHaveBeenCalled();
     expect(getGbizCompany).not.toHaveBeenCalled();
   });
+});
+
+describe("durable scan cancellation gates", () => {
+  test("a DB cancellation during an in-flight detail prevents that commit without a client abort", async () => {
+    upstream([company(1), company(2)]);
+    const { db, rows, job } = database();
+    vi.mocked(getGbizCompany).mockImplementationOnce(async () => {
+      // Models another tab's acknowledged cancellation while the transport
+      // keeps the original HTTP request alive.
+      job.status = "cancelled";
+      return company(1);
+    });
+    const result = last(
+      await events(
+        await startCompanyScan(db, org, {
+          criteria: scanCriteria.parse({ prefecture: "13" }),
+        }),
+      ),
+    );
+    expect(result).toMatchObject({
+      type: "paused",
+      reason: "cancelled",
+      scanned: 0,
+      saved: 0,
+      detailsFailed: 0,
+    });
+    expect(rows.size).toBe(0);
+    expect(getGbizCompany).toHaveBeenCalledTimes(1);
+    expect(job.finished).toBe(1);
+    expect(result.resumeToken).toBeTruthy();
+  });
+
+  test("a durable detail budget pauses after five and resumes at the sixth company", async () => {
+    upstream(Array.from({ length: 9 }, (_, i) => company(i + 1)));
+    const { db, rows, job } = database();
+    job.detailLimit = 5;
+    job.searchLimit = 2;
+    const criteria = scanCriteria.parse({ prefecture: "13" });
+    const first = last(
+      await events(await startCompanyScan(db, org, { criteria })),
+    );
+    expect(first).toMatchObject({
+      type: "paused",
+      reason: "chunk_limit",
+      scanned: 5,
+      matched: 5,
+      target: 20,
+    });
+    expect(getGbizCompany).toHaveBeenCalledTimes(5);
+    expect(job.permits).toEqual([
+      "search",
+      "detail",
+      "detail",
+      "detail",
+      "detail",
+      "detail",
+      "detail",
+    ]);
+    expect(job.finished).toBe(1);
+    const second = last(
+      await events(
+        await startCompanyScan(db, org, {
+          criteria,
+          resumeToken: first.resumeToken!,
+        }),
+      ),
+    );
+    expect(second).toMatchObject({
+      type: "complete",
+      reason: "exhausted",
+      scanned: 9,
+      matched: 9,
+      target: 20,
+    });
+    expect(rows.size).toBe(9);
+    expect(getGbizCompany).toHaveBeenCalledTimes(9);
+    expect(job.finished).toBe(2);
+  });
+
+  test("a denied search step never reaches the provider", async () => {
+    upstream([company(1)]);
+    const { db, rows, job } = database();
+    job.searchLimit = 0;
+    const result = last(
+      await events(
+        await startCompanyScan(db, org, {
+          criteria: scanCriteria.parse({ prefecture: "13" }),
+        }),
+      ),
+    );
+    expect(result).toMatchObject({
+      type: "paused",
+      reason: "chunk_limit",
+      scanned: 0,
+    });
+    expect(searchGbizCompanies).not.toHaveBeenCalled();
+    expect(getGbizCompany).not.toHaveBeenCalled();
+    expect(rows.size).toBe(0);
+    expect(job.finished).toBe(1);
+  });
+
+  test("stream reader cancellation closes the durable run with an independent signal", async () => {
+    upstream([company(1)]);
+    let release!: (value: GbizCompany) => void;
+    vi.mocked(getGbizCompany).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    const { db, rows, job } = database();
+    const response = await startCompanyScan(db, org, {
+      criteria: scanCriteria.parse({ prefecture: "13" }),
+    });
+    const reader = response.body!.getReader();
+    await reader.read();
+    await vi.advanceTimersByTimeAsync(1);
+    await reader.cancel();
+    expect(job.finished).toBe(1);
+    expect(job.signals.at(-1)?.aborted).toBe(false);
+    release(company(1));
+    await vi.advanceTimersByTimeAsync(1);
+    expect(rows.size).toBe(0);
+    expect(getGbizCompany).toHaveBeenCalledTimes(1);
+    expect(job.finished).toBe(1);
+  });
+
+  test("already-cancelled input never starts a provider call", async () => {
+    const { db, job } = database();
+    const stop = new AbortController();
+    stop.abort();
+    await expect(
+      startCompanyScan(
+        db,
+        org,
+        { criteria: scanCriteria.parse({ prefecture: "13" }) },
+        stop.signal,
+      ),
+    ).rejects.toMatchObject({ status: 409, code: "scan_cancelled" });
+    expect(searchGbizCompanies).not.toHaveBeenCalled();
+    expect(getGbizCompany).not.toHaveBeenCalled();
+    expect(job.permits).toEqual([]);
+  });
+
+  test("a quota refusal still finishes the superseding durable lease", async () => {
+    const { db, job } = database();
+    vi.mocked(reserveRequest).mockRejectedValueOnce(
+      new AppError(429, "discovery_rate_limited", "取得が集中しています"),
+    );
+    await expect(
+      startCompanyScan(db, org, {
+        criteria: scanCriteria.parse({ prefecture: "13" }),
+      }),
+    ).rejects.toMatchObject({ status: 429 });
+    expect(job.finished).toBe(1);
+    expect(searchGbizCompanies).not.toHaveBeenCalled();
+  });
+});
+
+test("request abort closes the durable lease before an abort-ignoring provider resolves", async () => {
+  upstream([company(1)]);
+  let release!: (value: GbizCompany) => void;
+  vi.mocked(getGbizCompany).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  const { db, rows, job } = database();
+  const stop = new AbortController();
+  const response = await startCompanyScan(
+    db,
+    org,
+    { criteria: scanCriteria.parse({ prefecture: "13" }) },
+    stop.signal,
+  );
+  const reading = events(response);
+  await vi.advanceTimersByTimeAsync(1);
+  stop.abort();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(job.finished).toBe(1);
+  expect(job.signals.at(-1)?.aborted).toBe(false);
+  release(company(1));
+  const result = last(await reading);
+  expect(result).toMatchObject({
+    type: "paused",
+    reason: "cancelled",
+    saved: 0,
+  });
+  expect(rows.size).toBe(0);
+  expect(job.finished).toBe(1);
 });

@@ -25,7 +25,12 @@ export function DiscoveryScanPanel({
   onStart,
 }: Props) {
   const canStart =
-    canWrite && configured && hasCriteria && !disabled && !scan.running;
+    canWrite &&
+    configured &&
+    hasCriteria &&
+    !disabled &&
+    !scan.running &&
+    !scan.blocked;
   const event = scan.event;
   return (
     <div
@@ -48,7 +53,20 @@ export function DiscoveryScanPanel({
                 条件に合う企業を探す
               </Busy>
             </Button>
-            {scan.running ? (
+            {scan.cancellation !== "idle" ? (
+              <Button
+                variant="outline"
+                onClick={scan.stop}
+                disabled={scan.cancellation === "pending"}
+              >
+                <Busy busy={scan.cancellation === "pending"}>
+                  <Square />
+                  {scan.cancellation === "pending"
+                    ? "停止を確認中"
+                    : "停止を再確認"}
+                </Busy>
+              </Button>
+            ) : scan.running ? (
               <Button variant="outline" onClick={scan.stop}>
                 <Square />
                 検索を停止
@@ -85,13 +103,19 @@ export function DiscoveryScanPanel({
           閲覧権限では取得済み候補を検索できます。外部検索・取込は営業メンバーまたは管理者に依頼してください。
         </p>
       )}
-      {(event || scan.running) && (
+      {(event || scan.running || scan.cancellation !== "idle") && (
         <div role="status" className="space-y-1 border-t pt-2 text-xs">
           <p className="font-medium">
             確認 {event?.scanned ?? 0} / 200 社 · 条件一致 {event?.matched ?? 0}{" "}
             / {event?.target ?? 20} 社
           </p>
-          {scan.waitingUntil ? (
+          {scan.cancellation === "pending" ? (
+            <p>停止を確認中です。確認が完了するまで再開できません。</p>
+          ) : scan.cancellation === "failed" ? (
+            <p role="alert" className="text-destructive">
+              停止の確認ができませんでした。「停止を再確認」を押してください。1回の詳細取得・保存は最大5社・開始から25秒以内に制限されていますが、停止の確認が済むまで新しい検索・再開はできません。
+            </p>
+          ) : scan.waitingUntil ? (
             <p>アクセス間隔を空けて待機中です。自動で続きを確認します。</p>
           ) : scan.running ? (
             <p>

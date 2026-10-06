@@ -92,6 +92,7 @@ export type ScanEvent = {
     | "scan_limit"
     | "exhausted"
     | "time_limit"
+    | "chunk_limit"
     | "upstream_error"
     | "cancelled";
   message?: string;

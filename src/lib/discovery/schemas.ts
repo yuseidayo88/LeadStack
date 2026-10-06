@@ -131,12 +131,17 @@ const website = z
     }
   }, "httpまたはhttpsの公式サイトURLを入力してください");
 
+export const scanInput = z.strictObject({
+  action: z.literal("scan"),
+  criteria: scanCriteria,
+  resumeToken: z.string().min(1).max(32_768).optional(),
+  runId: z.uuid(),
+  issuedAt: z.iso.datetime({ offset: true }),
+});
+export const scanCancelInput = z.strictObject({ runId: z.uuid() });
+
 export const discoveryInput = z.discriminatedUnion("action", [
-  z.strictObject({
-    action: z.literal("scan"),
-    criteria: scanCriteria,
-    resumeToken: z.string().min(1).max(32_768).optional(),
-  }),
+  scanInput,
   z
     .strictObject({
       action: z.literal("acquire"),

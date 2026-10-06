@@ -201,11 +201,10 @@ export async function reserveRequest(
   db: DB,
   org: string,
   operation: "acquire" | "enrich",
+  signal?: AbortSignal,
 ) {
-  const { data, error } = await db.rpc("reserve_company_discovery_request", {
-    org,
-    operation,
-  });
+  const query = db.rpc("reserve_company_discovery_request", { org, operation });
+  const { data, error } = await (signal ? query.abortSignal(signal) : query);
   if (error) databaseError(error);
   if (!data)
     throw new AppError(

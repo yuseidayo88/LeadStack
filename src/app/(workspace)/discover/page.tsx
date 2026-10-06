@@ -97,7 +97,7 @@ export default function DiscoverCompanies() {
 }
 
 function OrganizationDiscovery() {
-  const { base, canWrite, refresh } = useWorkspace();
+  const { base, canWrite, refresh, profile } = useWorkspace();
   const filtersKey = `leadstack.discovery.filters.v1.${base}`;
   // The parent mounts this component only after hydration. Restore once so a
   // different tab cannot change the results underneath an existing selection.
@@ -165,6 +165,7 @@ function OrganizationDiscovery() {
   const criteria = scanCriteriaFromFilters(filters);
   const scan = useDiscoveryScan({
     base,
+    actorId: profile.id,
     criteria,
     onSaved: () => {
       void rows.mutate();
