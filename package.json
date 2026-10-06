@@ -23,7 +23,12 @@
     "check:gbiz": "node --conditions=react-server --env-file-if-exists=.env.local scripts/check-gbiz.mjs",
     "test:discovery:browser": "node tests/recovery/discovery-e2e.mjs",
     "test:discovery:concurrency": "node tests/recovery/discovery-concurrency.mjs",
-    "test:targeting:browser": "node tests/recovery/targeting-e2e.mjs"
+    "test:targeting:browser": "node tests/recovery/targeting-e2e.mjs",
+    "test:discovery:scan": "node tests/recovery/discovery-scan-e2e.mjs",
+    "test:discovery:performance": "node tests/recovery/discovery-performance.mjs",
+    "test:discovery:stop": "node tests/recovery/discovery-stop-e2e.mjs",
+    "test:discovery:scan:database": "node --test tests/recovery/discovery-scan-database.mjs",
+    "test:discovery:scan:concurrency": "node --test tests/recovery/discovery-scan-concurrency.mjs"
   },
   "engines": {
     "node": ">=22.0.0"

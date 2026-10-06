@@ -994,6 +994,36 @@ export type Database = {
       };
     };
     Functions: {
+      start_discovery_scan_run: {
+        Args: {
+          org: string;
+          run_id: string;
+          issued_at: string;
+          deadline_at?: string | null;
+        };
+        Returns: Json;
+      };
+      authorize_discovery_scan_step: {
+        Args: { org: string; run_id: string; kind: string };
+        Returns: Json;
+      };
+      commit_discovery_scan_candidate: {
+        Args: {
+          org: string;
+          run_id: string;
+          candidate: Json;
+          expected_updated_at?: string | null;
+        };
+        Returns: Json;
+      };
+      cancel_discovery_scan_run: {
+        Args: { org: string; run_id: string };
+        Returns: Json;
+      };
+      finish_discovery_scan_run: {
+        Args: { org: string; run_id: string };
+        Returns: Json;
+      };
       preview_company_candidates: {
         Args: { org: string; candidate_ids: string[] };
         Returns: Json;

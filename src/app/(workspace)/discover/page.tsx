@@ -2,6 +2,7 @@
 
 import { useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
+import useSWR from "swr";
 import {
   ArrowUpDown,
   Building2,
@@ -13,9 +14,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useWorkspace } from "@/components/layout/workspace";
-import { api, message, useApi } from "@/lib/client-api";
+import { api, message, type ApiError } from "@/lib/client-api";
 import type {
-  AcquireResponse,
   Candidate,
   DiscoveryListResponse,
 } from "@/lib/discovery/contracts";
@@ -34,6 +34,12 @@ import { SearchableSelect } from "@/components/crm/searchable-select";
 import { ActivityDialog } from "@/components/crm/activity";
 import { CandidateDialog } from "@/components/discovery/candidate-dialog";
 import { TargetingFilters } from "@/components/discovery/targeting-filters";
+import { DiscoveryScanPanel } from "@/components/discovery/scan-panel";
+import { useDiscoveryScan } from "@/components/discovery/use-discovery-scan";
+import {
+  hasScanCriteria,
+  scanCriteriaFromFilters,
+} from "@/lib/discovery/scan-client";
 import {
   defaultDiscoveryFilters,
   matchingBusinessKeywords,
@@ -75,61 +81,9 @@ const presenceLabels = {
 };
 type Presence = keyof typeof presenceLabels;
 type Sort = "name" | "fetched_at" | "employee_number";
-type AcquisitionCheckpoint = { scope: string; result: AcquireResponse };
-const subscribeToStorage = (listener: () => void) => {
-  window.addEventListener("storage", listener);
-  return () => window.removeEventListener("storage", listener);
-};
-const emptyStorageSnapshot = () => null;
 const subscribeToHydration = () => () => {};
 const clientHydrationSnapshot = () => true;
 const serverHydrationSnapshot = () => false;
-function parseCheckpoint(value: string | null): AcquisitionCheckpoint | null {
-  if (!value) return null;
-  try {
-    const parsed = JSON.parse(value) as AcquisitionCheckpoint;
-    if (
-      typeof parsed.scope !== "string" ||
-      parsed.scope.length > 1000 ||
-      !parsed.result
-    )
-      return null;
-    const searchScope = JSON.parse(parsed.scope) as {
-      prefecture: string;
-      search: string;
-    };
-    if (
-      typeof searchScope.prefecture !== "string" ||
-      !/^(?:0[1-9]|[1-3]\d|4[0-7])?$/.test(searchScope.prefecture) ||
-      typeof searchScope.search !== "string" ||
-      searchScope.search.length > 200
-    )
-      return null;
-    const result = parsed.result;
-    if (
-      !Number.isSafeInteger(result.page) ||
-      result.page < 1 ||
-      result.page > 10 ||
-      !Number.isSafeInteger(result.fetched) ||
-      result.fetched < 0 ||
-      result.fetched > 20 ||
-      !Number.isSafeInteger(result.detailsFailed) ||
-      result.detailsFailed < 0 ||
-      result.detailsFailed > 20 ||
-      (result.nextPage !== null &&
-        (!Number.isSafeInteger(result.nextPage) ||
-          result.nextPage < 2 ||
-          result.nextPage > 10)) ||
-      typeof result.message !== "string" ||
-      result.message.length > 1000
-    )
-      return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
 export default function DiscoverCompanies() {
   const { base } = useWorkspace();
   const hydrated = useSyncExternalStore(
@@ -143,7 +97,7 @@ export default function DiscoverCompanies() {
 }
 
 function OrganizationDiscovery() {
-  const { base, canWrite, refresh } = useWorkspace();
+  const { base, canWrite, refresh, profile } = useWorkspace();
   const filtersKey = `leadstack.discovery.filters.v1.${base}`;
   // The parent mounts this component only after hydration. Restore once so a
   // different tab cannot change the results underneath an existing selection.
@@ -155,14 +109,13 @@ function OrganizationDiscovery() {
     }
   });
   const { search, prefecture, industry, sort, direction } = filters;
-  const term = useDebounced(search);
-  const keywords = useDebounced(filters.businessKeywords);
-  const filtersSettling =
-    search !== term || filters.businessKeywords !== keywords;
+  const filterSnapshot = JSON.stringify(filters);
+  const appliedSnapshot = useDebounced(filterSnapshot);
+  const filtersSettling = filterSnapshot !== appliedSnapshot;
   const filterError = targetingFilterError(filters);
-  const queryFilterError =
-    filterError ||
-    targetingFilterError({ ...filters, businessKeywords: keywords });
+  const applied = JSON.parse(appliedSnapshot) as DiscoveryFilters;
+  const queryFilterError = targetingFilterError(applied);
+  const keywords = applied.businessKeywords;
   const preset = targetingPresets.find((item) => item.id === filters.presetId);
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<string[]>([]);
@@ -174,60 +127,51 @@ function OrganizationDiscovery() {
   const [removeOpen, setRemoveOpen] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [removeError, setRemoveError] = useState("");
-  const [acquiring, setAcquiring] = useState(false);
-  const [acquireError, setAcquireError] = useState("");
-  const [acquired, setAcquired] = useState<AcquisitionCheckpoint | null>(null);
-  const checkpointKey = `leadstack.discovery.v1.${base}`;
-  const savedCheckpoint = useSyncExternalStore(
-    subscribeToStorage,
-    () => {
-      try {
-        return window.localStorage.getItem(checkpointKey);
-      } catch {
-        return null;
-      }
-    },
-    emptyStorageSnapshot,
-  );
-  const rememberedAcquisition = acquired ?? parseCheckpoint(savedCheckpoint);
   const inFlight = useRef(false);
-  const rows = useApi<DiscoveryListResponse>(
+  const rows = useSWR<DiscoveryListResponse, ApiError>(
     queryFilterError || filtersSettling
       ? null
       : `${base}/company-discovery?${query({
-          search: term,
-          prefecture,
-          industry,
-          hasPhone: filters.hasPhone ? "true" : undefined,
-          hasWebsite: filters.hasWebsite ? "true" : undefined,
-          hasEmployees: filters.hasEmployees ? "true" : undefined,
-          employeeMin: filters.employeeMin || undefined,
-          employeeMax: filters.employeeMax || undefined,
-          includeUnknownEmployees: filters.includeUnknownEmployees
+          search: applied.search,
+          prefecture: applied.prefecture,
+          industry: applied.industry,
+          hasPhone: applied.hasPhone ? "true" : undefined,
+          hasWebsite: applied.hasWebsite ? "true" : undefined,
+          hasEmployees: applied.hasEmployees ? "true" : undefined,
+          employeeMin: applied.employeeMin || undefined,
+          employeeMax: applied.employeeMax || undefined,
+          includeUnknownEmployees: applied.includeUnknownEmployees
             ? "true"
             : "false",
-          includeUnknownIndustry: filters.includeUnknownIndustry
+          includeUnknownIndustry: applied.includeUnknownIndustry
             ? "true"
             : "false",
           businessKeywords: keywords || undefined,
           page,
           pageSize: 20,
-          sort,
-          direction,
+          view: "summary",
+          sort: applied.sort,
+          direction: applied.direction,
         })}`,
+    (url: string) => api<DiscoveryListResponse>(url),
+    {
+      keepPreviousData: false,
+      revalidateOnFocus: false,
+      shouldRetryOnError: (error) => error.status >= 500,
+      errorRetryCount: 2,
+      dedupingInterval: 2000,
+    },
   );
+  const criteria = scanCriteriaFromFilters(filters);
+  const scan = useDiscoveryScan({
+    base,
+    actorId: profile.id,
+    criteria,
+    onSaved: () => {
+      void rows.mutate();
+    },
+  });
   const data = rows.data;
-  const remoteSearch = search.normalize("NFKC").trim();
-  const scope = JSON.stringify({ prefecture, search: remoteSearch });
-  const latestAcquisition =
-    rememberedAcquisition?.scope === scope
-      ? rememberedAcquisition.result
-      : null;
-  const canAcquire =
-    canWrite &&
-    data?.configured &&
-    (!!prefecture || !!remoteSearch) &&
-    !acquiring;
   const hasFilters =
     !!search ||
     !!prefecture ||
@@ -253,6 +197,10 @@ function OrganizationDiscovery() {
     const next = { ...filters, ...change };
     if (change.hasEmployees) next.includeUnknownEmployees = false;
     else if (change.includeUnknownEmployees) next.hasEmployees = false;
+    if (
+      JSON.stringify(scanCriteriaFromFilters(next)) !== JSON.stringify(criteria)
+    )
+      scan.cancel();
     setFilters(next);
     // Invalid drafts remain editable but must not replace the last valid saved search.
     if (!targetingFilterError(next)) {
@@ -312,38 +260,28 @@ function OrganizationDiscovery() {
       ),
     }));
   }
-  async function acquire(nextPage = 1) {
-    if (!canAcquire || inFlight.current) return;
-    inFlight.current = true;
-    setAcquiring(true);
-    setAcquireError("");
-    try {
-      const result = await api<AcquireResponse>(
-        `${base}/company-discovery`,
-        "POST",
-        {
-          action: "acquire",
-          prefecture: prefecture || undefined,
-          ...(/^\d{13}$/.test(remoteSearch)
-            ? { corporateNumber: remoteSearch }
-            : { name: remoteSearch || undefined }),
-          page: nextPage,
-        },
-      );
-      const checkpoint = { scope, result };
-      setAcquired(checkpoint);
-      try {
-        window.localStorage.setItem(checkpointKey, JSON.stringify(checkpoint));
-      } catch {}
-      setPage(1);
-      await rows.mutate();
-      toast.success(`${result.fetched} 社の候補を取得しました`);
-    } catch (error) {
-      setAcquireError(message(error));
-    } finally {
-      inFlight.current = false;
-      setAcquiring(false);
-    }
+  function startScan(resume: boolean) {
+    if (
+      !canWrite ||
+      !data?.configured ||
+      filterError ||
+      filtersSettling ||
+      removing
+    )
+      return;
+    resetPage();
+    void scan.start(resume);
+    const progress = document.getElementById("discovery-search-progress");
+    requestAnimationFrame(() => {
+      if (progress?.isConnected)
+        progress.scrollIntoView({
+          block: "start",
+          behavior: window.matchMedia("(prefers-reduced-motion: reduce)")
+            .matches
+            ? "instant"
+            : "smooth",
+        });
+    });
   }
   async function imported() {
     setSelected([]);
@@ -372,14 +310,6 @@ function OrganizationDiscovery() {
       setRemoving(false);
     }
   }
-  const fetchButton = (
-    <Button onClick={() => void acquire()} disabled={!canAcquire}>
-      <Busy busy={acquiring}>
-        <Download />
-        Gビズインフォから候補を取得
-      </Busy>
-    </Button>
-  );
 
   return (
     <div className="page">
@@ -409,40 +339,14 @@ function OrganizationDiscovery() {
               <a href="#candidate-list">候補を見る</a>
             </Button>
             {hasFilters && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={clear}
-                disabled={acquiring}
-              >
+              <Button variant="ghost" size="sm" onClick={clear}>
                 <X />
                 条件をクリア
               </Button>
             )}
           </div>
         </div>
-        <fieldset
-          disabled={acquiring}
-          className="grid gap-3 md:grid-cols-[minmax(200px,1.3fr)_minmax(180px,.8fr)_minmax(220px,1fr)]"
-        >
-          <label>
-            <span className="field-label">企業名・法人番号</span>
-            <div className="relative">
-              <Search
-                className="absolute left-3 top-2.5 size-4 text-muted-foreground"
-                aria-hidden="true"
-              />
-              <Input
-                className="bg-white pl-9"
-                placeholder="企業名または13桁の法人番号"
-                value={search}
-                maxLength={200}
-                onChange={(event) => {
-                  changeFilters({ search: event.target.value });
-                }}
-              />
-            </div>
-          </label>
+        <fieldset className="grid gap-3 md:grid-cols-[minmax(180px,.8fr)_minmax(220px,1fr)_minmax(200px,1.3fr)]">
           <div>
             <label className="field-label" htmlFor="discovery-prefecture">
               都道府県
@@ -452,7 +356,6 @@ function OrganizationDiscovery() {
               label="都道府県"
               options={prefectureOptions}
               value={prefecture}
-              disabled={acquiring}
               onChange={(value) => {
                 changeFilters({ prefecture: value });
               }}
@@ -473,16 +376,33 @@ function OrganizationDiscovery() {
                 ]),
               ]}
               value={industry}
-              disabled={acquiring}
               onChange={(value) => {
                 changeFilters({ industry: value });
               }}
             />
           </div>
+          <label>
+            <span className="field-label">企業名・法人番号（任意）</span>
+            <div className="relative">
+              <Search
+                className="absolute left-3 top-2.5 size-4 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <Input
+                className="bg-white pl-9"
+                placeholder="任意：企業名が分からなくても検索できます"
+                value={search}
+                maxLength={200}
+                onChange={(event) => {
+                  changeFilters({ search: event.target.value });
+                }}
+              />
+            </div>
+          </label>
         </fieldset>
         <TargetingFilters
           filters={filters}
-          disabled={acquiring}
+          disabled={false}
           error={filterError}
           onChange={changeFilters}
         />
@@ -492,7 +412,6 @@ function OrganizationDiscovery() {
               <input
                 type="checkbox"
                 checked={filters[key as Presence]}
-                disabled={acquiring}
                 onChange={(event) => {
                   changeFilters({ [key]: event.target.checked });
                 }}
@@ -501,128 +420,54 @@ function OrganizationDiscovery() {
             </label>
           ))}
         </div>
-        <div className="space-y-2 rounded-md bg-slate-50 p-3">
-          {data && !data.configured ? (
-            <p role="status" className="text-xs leading-relaxed">
-              外部データの接続設定が必要です。取得済みの候補は検索できます。新しく取得するには管理者に接続設定を依頼してください。
-            </p>
-          ) : (
-            <p className="text-xs leading-relaxed">
-              Gビズインフォへの取得条件は「都道府県・企業名・法人番号」です。1回最大20社。人数・業種・業務キーワードは取得済み候補への絞り込みに使います。
-            </p>
-          )}
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            {preset && (
-              <div
-                className="min-w-0 space-y-1"
-                role="group"
-                aria-label="企業名で取得する候補"
-              >
-                <span className="text-xs font-medium">
-                  企業名で取得：語を選んでから取得ボタンを押してください
-                </span>
-                <div className="flex flex-wrap gap-2">
-                  {preset.nameHints.map((hint) => (
-                    <Button
-                      key={hint}
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={acquiring}
-                      aria-pressed={search === hint}
-                      onClick={() => changeFilters({ search: hint })}
-                      className="h-7 px-2 text-xs"
-                    >
-                      {hint}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {canWrite ? (
-              <div className="flex flex-wrap items-center gap-2">
-                {fetchButton}
-                {!prefecture && !remoteSearch && (
-                  <span className="text-xs text-muted-foreground">
-                    都道府県または企業名・法人番号を指定してください
-                  </span>
-                )}
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                閲覧権限のため、取得済み候補の検索のみ利用できます。候補の取得・取込は営業メンバーまたは管理者に依頼してください。
-              </p>
-            )}
-          </div>
-          {!latestAcquisition &&
-            rememberedAcquisition?.result.nextPage &&
-            canWrite && (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={acquiring}
-                onClick={() => {
-                  const previous = JSON.parse(rememberedAcquisition.scope) as {
-                    prefecture: string;
-                    search: string;
-                  };
-                  changeFilters({
-                    prefecture: previous.prefecture,
-                    search: previous.search,
-                  });
-                }}
-              >
-                前回の取得条件を戻す（続きから取得できます）
-              </Button>
-            )}
-          {search && (
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <span>取得済み候補も「{search}」で絞り込んでいます。</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={acquiring}
-                onClick={() => changeFilters({ search: "" })}
-                className="h-7 px-2 text-xs"
-              >
-                企業名・法人番号の条件だけ解除
-              </Button>
-            </div>
-          )}
-          {acquiring && (
-            <p role="status" className="text-xs text-muted-foreground">
-              企業の基本情報と業種・Webサイト・従業員数を確認しています。この処理には少し時間がかかります。
-            </p>
-          )}
-          {acquireError && (
-            <p role="alert" className="text-sm text-destructive">
-              {acquireError}
-            </p>
-          )}
-          {latestAcquisition && (
-            <div role="status" className="space-y-2 border-t pt-3 text-sm">
-              <p>{latestAcquisition.message}</p>
-              {latestAcquisition.detailsFailed > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  {latestAcquisition.detailsFailed}{" "}
-                  社は詳細情報を取得できませんでした。取得できた基本情報を表示しています。
-                </p>
-              )}
-              {latestAcquisition.nextPage !== null && canWrite && (
+        <DiscoveryScanPanel
+          scan={scan}
+          canWrite={canWrite}
+          configured={data?.configured}
+          hasCriteria={hasScanCriteria(criteria)}
+          requiresPhone={filters.hasPhone}
+          disabled={!!filterError || filtersSettling || removing}
+          onStart={startScan}
+        />
+        {preset && (
+          <details className="text-xs text-muted-foreground">
+            <summary className="cursor-pointer">
+              企業名でさらに絞る（任意）
+            </summary>
+            <div
+              className="mt-2 flex flex-wrap gap-2"
+              role="group"
+              aria-label="企業名で取得する候補"
+            >
+              {preset.nameHints.map((hint) => (
                 <Button
+                  key={hint}
+                  type="button"
                   variant="outline"
                   size="sm"
-                  disabled={!canAcquire}
-                  onClick={() => void acquire(latestAcquisition.nextPage!)}
+                  aria-pressed={search === hint}
+                  onClick={() => changeFilters({ search: hint })}
+                  className="h-7 px-2 text-xs"
                 >
-                  <Busy busy={acquiring}>
-                    続きの候補を取得（{latestAcquisition.nextPage} 回目）
-                  </Busy>
+                  {hint}
                 </Button>
-              )}
+              ))}
             </div>
-          )}
-        </div>
+          </details>
+        )}
+        {search && (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span>「{search}」を企業名・法人番号の条件に指定しています。</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => changeFilters({ search: "" })}
+              className="h-7 px-2 text-xs"
+            >
+              企業名・法人番号の条件だけ解除
+            </Button>
+          </div>
+        )}
       </div>
 
       <section
@@ -814,13 +659,16 @@ function OrganizationDiscovery() {
                         </p>
                       )}
                       {keywords &&
-                        matchingBusinessKeywords(candidate, keywords).length >
-                          0 && (
+                        (
+                          candidate.matched_business_keywords ??
+                          matchingBusinessKeywords(candidate, keywords)
+                        ).length > 0 && (
                           <p className="mt-1 max-w-72 text-[11px] text-muted-foreground">
                             名称・事業内容に一致：
-                            {matchingBusinessKeywords(candidate, keywords).join(
-                              "・",
-                            )}
+                            {(
+                              candidate.matched_business_keywords ??
+                              matchingBusinessKeywords(candidate, keywords)
+                            ).join("・")}
                           </p>
                         )}
                     </td>
@@ -890,12 +738,12 @@ function OrganizationDiscovery() {
             title={
               data.totalCached
                 ? "条件に合う取得済み候補はありません"
-                : "企業の候補を取得しましょう"
+                : "条件を指定して企業を探しましょう"
             }
             description={
               data.totalCached
-                ? "条件を変えるか、都道府県や企業名を指定して外部から候補を取得してください。未確認の項目は「あり」の条件には含まれません。"
-                : "上の検索条件で都道府県または企業名を指定し、Gビズインフォから候補を取得できます。"
+                ? "上の「条件に合う企業を探す」で外部の企業を確認できます。見つからない場合は人数・業種が未確認の企業を含めるか、条件を広げてください。"
+                : "都道府県・業種・人数などを指定し、「条件に合う企業を探す」を押してください。企業名は空欄で使えます。"
             }
             action={
               hasFilters && data.totalCached ? (

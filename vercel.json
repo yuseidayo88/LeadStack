@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "src/app/api/organizations/*/company-discovery/scan/route.ts": {
+      "supportsCancellation": true
+    }
+  }
+}

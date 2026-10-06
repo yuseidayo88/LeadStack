@@ -145,7 +145,7 @@ async function choose(p, label, option, search = option) {
 }
 
 async function searchFor(value) {
-  await page.getByLabel("企業名・法人番号", { exact: true }).fill(value);
+  await page.getByLabel("企業名・法人番号（任意）", { exact: true }).fill(value);
 }
 
 async function visibleCount(count) {
@@ -418,7 +418,7 @@ try {
   await choose(page, "都道府県", "東京都", "東京");
   await expect(
     page.getByRole("button", {
-      name: "Gビズインフォから候補を取得",
+      name: "条件に合う企業を探す",
       exact: true,
     }),
   ).toBeDisabled();
@@ -952,7 +952,7 @@ try {
   ).toBeVisible();
   await expect(
     viewerPage.getByRole("button", {
-      name: "Gビズインフォから候補を取得",
+      name: "条件に合う企業を探す",
       exact: true,
     }),
   ).toHaveCount(0);
@@ -963,7 +963,7 @@ try {
     }),
   ).toHaveCount(0);
   await viewerPage
-    .getByLabel("企業名・法人番号", { exact: true })
+    .getByLabel("企業名・法人番号（任意）", { exact: true })
     .fill(candidates.zero.corporate_number);
   await viewerPage
     .getByRole("button", { name: candidates.zero.name, exact: true })
