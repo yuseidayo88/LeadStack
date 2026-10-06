@@ -150,7 +150,7 @@ async function choose(p, label, option, search = option) {
 }
 
 async function searchFor(value) {
-  await page.getByLabel("企業名・法人番号（任意）", { exact: true }).fill(value);
+  await page.getByLabel("企業名・法人番号", { exact: true }).fill(value);
 }
 
 async function visibleCount(count) {
@@ -533,7 +533,7 @@ try {
     if (
       req.url().endsWith(endpoint) &&
       req.method() === "POST" &&
-      ["acquire", "scan"].includes(req.postDataJSON()?.action)
+      req.postDataJSON()?.action === "acquire"
     )
       acquireCalls++;
   });
@@ -565,11 +565,10 @@ try {
     path: output + "/preset-desktop.png",
     fullPage: true,
   });
-  await page.getByText("企業名でさらに絞る（任意）", { exact: true }).click();
   const nameHints = page.locator('[aria-label="企業名で取得する候補"]');
   await nameHints.getByRole("button", { name: "空調", exact: true }).click();
   await expect(
-    page.getByLabel("企業名・法人番号（任意）", { exact: true }),
+    page.getByLabel("企業名・法人番号", { exact: true }),
   ).toHaveValue("空調");
   await expect(page.getByLabel("業務キーワード", { exact: true })).toHaveValue(
     "設備 電気 空調 給排水 保守 点検",
@@ -579,7 +578,7 @@ try {
     0,
     "Company-name suggestion requires explicit acquire action",
   );
-  await page.getByLabel("企業名・法人番号（任意）", { exact: true }).fill("");
+  await page.getByLabel("企業名・法人番号", { exact: true }).fill("");
   await visibleCount(5);
   await choose(page, "業種", "建設業", "建設");
   await visibleCount(3);

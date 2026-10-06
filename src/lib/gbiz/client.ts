@@ -18,7 +18,6 @@ const errorMessages = {
   timeout: "Gビズインフォへの接続がタイムアウトしました。",
   network_error: "Gビズインフォに接続できませんでした。",
   redirect_refused: "Gビズインフォからの転送を拒否しました。",
-  cancelled: "企業情報の取得を停止しました。",
 } as const;
 
 export class GbizError extends Error {
@@ -80,11 +79,7 @@ export interface GbizSearchParams {
   corporateNumber?: string;
   page?: number;
   limit?: number;
-  employeeMin?: number;
-  employeeMax?: number;
 }
-
-type RequestOptions = { signal?: AbortSignal; allowUnfiltered?: boolean };
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -208,7 +203,6 @@ async function request(
   url: URL,
   maxRecords: number,
   allowNotFound = false,
-  externalSignal?: AbortSignal,
 ): Promise<GbizCompany[]> {
   const token = process.env.GBIZ_API_TOKEN?.trim();
   if (!token) throw new GbizError("not_configured");
@@ -221,9 +215,7 @@ async function request(
       headers: { Accept: "application/json", "X-hojinInfo-api-token": token },
       cache: "no-store",
       redirect: "manual",
-      signal: externalSignal
-        ? AbortSignal.any([controller.signal, externalSignal])
-        : controller.signal,
+      signal: controller.signal,
     });
     if (
       response.redirected ||
@@ -253,7 +245,6 @@ async function request(
       normalizeCompany(company, url.toString(), retrievedAt),
     );
   } catch (error) {
-    if (externalSignal?.aborted) throw new GbizError("cancelled");
     if (controller.signal.aborted) throw new GbizError("timeout");
     if (error instanceof GbizError) throw error;
     // Do not forward fetch exceptions, headers, upstream messages or response bodies.
@@ -265,10 +256,7 @@ async function request(
   }
 }
 
-export async function searchGbizCompanies(
-  params: GbizSearchParams,
-  options: RequestOptions = {},
-): Promise<{
+export async function searchGbizCompanies(params: GbizSearchParams): Promise<{
   companies: GbizCompany[];
   page: number;
   limit: number;
@@ -290,20 +278,7 @@ export async function searchGbizCompanies(
       (!corporateNumber || !CORPORATE_NUMBER.test(corporateNumber))) ||
     (params.prefecture !== undefined &&
       (!prefecture || !/^(0[1-9]|[1-3]\d|4[0-7])$/.test(prefecture))) ||
-    [params.employeeMin, params.employeeMax].some(
-      (value) =>
-        value !== undefined &&
-        (!Number.isInteger(value) || value < 0 || value > 2147483647),
-    ) ||
-    (params.employeeMin !== undefined &&
-      params.employeeMax !== undefined &&
-      params.employeeMin > params.employeeMax) ||
-    (!name &&
-      !corporateNumber &&
-      !prefecture &&
-      params.employeeMin === undefined &&
-      params.employeeMax === undefined &&
-      !options.allowUnfiltered)
+    (!name && !corporateNumber && !prefecture)
   )
     throw new GbizError("invalid_parameters");
   const url = new URL(API_URL);
@@ -311,24 +286,15 @@ export async function searchGbizCompanies(
   if (corporateNumber)
     url.searchParams.set("corporate_number", corporateNumber);
   if (prefecture) url.searchParams.set("prefecture", prefecture);
-  if (params.employeeMin !== undefined)
-    url.searchParams.set("employee_number_from", String(params.employeeMin));
-  if (params.employeeMax !== undefined)
-    url.searchParams.set("employee_number_to", String(params.employeeMax));
   url.searchParams.set("page", String(page));
   url.searchParams.set("limit", String(limit));
   url.searchParams.set("metadata_flg", "true");
   // No industry parameter or reliable total-count field exists in this API.
-  return {
-    companies: await request(url, limit, false, options.signal),
-    page,
-    limit,
-  };
+  return { companies: await request(url, limit), page, limit };
 }
 
 export async function getGbizCompany(
   corporateNumber: string,
-  options: Pick<RequestOptions, "signal"> = {},
 ): Promise<GbizCompany | null> {
   if (
     typeof corporateNumber !== "string" ||
@@ -337,7 +303,7 @@ export async function getGbizCompany(
     throw new GbizError("invalid_parameters");
   const url = new URL(`${API_URL}/${corporateNumber}`);
   url.searchParams.set("metadata_flg", "true");
-  const companies = await request(url, 1, true, options.signal);
+  const companies = await request(url, 1, true);
   const company = companies[0] ?? null;
   if (company && company.corporateNumber !== corporateNumber)
     throw new GbizError("invalid_response");

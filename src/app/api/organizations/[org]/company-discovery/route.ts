@@ -2,7 +2,6 @@ import { requireOrganization } from "@/lib/auth";
 import { AppError, databaseError } from "@/lib/errors";
 import { handle, readJson } from "@/lib/http";
 import { discoveryInput, discoveryQuery } from "@/lib/discovery/schemas";
-import { startCompanyScan } from "@/lib/discovery/scan";
 import {
   acquireCandidates,
   enrichCandidate,
@@ -16,20 +15,12 @@ type Context = { params: Promise<{ org: string }> };
 
 export async function GET(request: Request, context: Context) {
   return handle(async () => {
-    const started = performance.now();
     const { org } = await context.params;
     const { db } = await requireOrganization(org);
-    const authorized = performance.now();
     const input = discoveryQuery.parse(
       Object.fromEntries(new URL(request.url).searchParams),
     );
-    const result = await listCandidates(db, org, input);
-    const finished = performance.now();
-    return Response.json(result, {
-      headers: {
-        "Server-Timing": `auth;dur=${(authorized - started).toFixed(1)}, list;dur=${(finished - authorized).toFixed(1)}, total;dur=${(finished - started).toFixed(1)}`,
-      },
-    });
+    return Response.json(await listCandidates(db, org, input));
   });
 }
 
@@ -38,8 +29,6 @@ export async function POST(request: Request, context: Context) {
     const input = discoveryInput.parse(await readJson(request));
     const { org } = await context.params;
     const { db, user } = await requireOrganization(org, true);
-    if (input.action === "scan")
-      return startCompanyScan(db, org, input, request.signal);
     if (input.action === "acquire")
       return Response.json(await acquireCandidates(db, org, input));
     if (input.action === "enrich")

@@ -41,16 +41,7 @@ export async function readJson(request: Request, maxBytes = 128 * 1024) {
 export async function handle(action: () => Promise<Response>) {
   try {
     const response = await action();
-    const noTransform = response.headers
-      .get("Cache-Control")
-      ?.split(",")
-      .some((directive) => directive.trim().toLowerCase() === "no-transform");
-    // Streaming routes may prohibit intermediary buffering/transformation while
-    // retaining the same private, non-cacheable policy as other API responses.
-    response.headers.set(
-      "Cache-Control",
-      `private, no-store${noTransform ? ", no-transform" : ""}`,
-    );
+    response.headers.set("Cache-Control", "private, no-store");
     return response;
   } catch (error) {
     const response = errorResponse(error);
