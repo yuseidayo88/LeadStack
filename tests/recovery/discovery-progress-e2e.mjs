@@ -1,3 +1,4 @@
+import { expandSearchOptions } from "./search-options.mjs";
 // UI/protocol tests: real local login, synthetic delayed scan/list responses.
 // Does not test server cancellation; discovery-stop-e2e covers that separately.
 import { chromium, expect } from "@playwright/test";
@@ -106,6 +107,7 @@ const start = panel.getByRole("button", {
 });
 const list = page.locator("#candidate-list");
 async function criteria(name) {
+  await expandSearchOptions(page);
   data = [];
   listError = false;
   await page

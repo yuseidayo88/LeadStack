@@ -155,57 +155,26 @@ export function ActivityDialog({
       </DialogTrigger>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-[600px]">
         <DialogHeader>
-          <DialogTitle>
+          <DialogTitle className="break-words pr-6">
             {companyName ? `${companyName}の営業活動を記録` : "営業活動を記録"}
           </DialogTitle>
           <DialogDescription>
             会話の内容と次のアクションを残しましょう。日時は日本時間です。
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={submit} className="space-y-5">
+        <form
+          onSubmit={submit}
+          className="space-y-5"
+          onInvalidCapture={(event) => {
+            let container = (event.target as HTMLElement).parentElement;
+            while (container && container !== event.currentTarget) {
+              if (container instanceof HTMLDetailsElement)
+                container.open = true;
+              container = container.parentElement;
+            }
+          }}
+        >
           <fieldset disabled={busy} className="grid gap-4 sm:grid-cols-2">
-            <label>
-              <span className="field-label">活動の種類</span>
-              <select
-                className="native-select"
-                value={type}
-                onChange={(e) => setType(e.target.value)}
-              >
-                {Object.entries(activityLabels)
-                  .filter(([k]) => k !== "status_change")
-                  .map(([k, v]) => (
-                    <option key={k} value={k}>
-                      {v}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <label>
-              <span className="field-label">活動日時</span>
-              <Input
-                type="datetime-local"
-                name="occurred_at"
-                defaultValue={localInputDate(new Date().toISOString())}
-                required
-              />
-            </label>
-            <div className="sm:col-span-2">
-              <Lookup
-                resource="contacts"
-                label="企業担当者"
-                companyId={companyId}
-                value={contact}
-                onChange={setContact}
-              />
-            </div>
-            <label className="sm:col-span-2">
-              <span className="field-label">件名</span>
-              <Input
-                name="title"
-                maxLength={300}
-                placeholder="例：業務課題のヒアリング"
-              />
-            </label>
             {type === "call" && (
               <>
                 <label>
@@ -220,6 +189,7 @@ export function ActivityDialog({
                   <span className="field-label">架電結果</span>
                   <select
                     name="result"
+                    aria-label="架電結果"
                     className="native-select"
                     value={result}
                     onChange={(e) => {
@@ -234,30 +204,6 @@ export function ActivityDialog({
                     ))}
                   </select>
                 </label>
-                <details className="rounded-md border p-3 sm:col-span-2">
-                  <summary className="cursor-pointer text-xs text-muted-foreground">
-                    通話時間の詳細（任意）
-                  </summary>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <label>
-                      <span className="field-label">開始日時</span>
-                      <Input type="datetime-local" name="started_at" />
-                    </label>
-                    <label>
-                      <span className="field-label">終了日時</span>
-                      <Input type="datetime-local" name="ended_at" />
-                    </label>
-                    <label>
-                      <span className="field-label">通話時間（秒）</span>
-                      <Input
-                        type="number"
-                        name="duration_seconds"
-                        min={0}
-                        step={1}
-                      />
-                    </label>
-                  </div>
-                </details>
               </>
             )}
             <label className="sm:col-span-2">
@@ -282,6 +228,99 @@ export function ActivityDialog({
                 </label>
                 {callback && (
                   <div className="grid gap-4 sm:grid-cols-2">
+                    <label>
+                      <span className="field-label">再架電日時</span>
+                      <Input
+                        name="callback_due"
+                        type="datetime-local"
+                        required
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+            )}
+            <details
+              className="rounded-md border p-3 sm:col-span-2"
+              open={type !== "call" ? true : undefined}
+            >
+              <summary className="cursor-pointer text-sm font-medium">
+                活動の詳細（種類・日時・担当者など）
+              </summary>
+              <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                <label>
+                  <span className="field-label">活動の種類</span>
+                  <select
+                    aria-label="活動の種類"
+                    className="native-select"
+                    value={type}
+                    onChange={(e) => setType(e.target.value)}
+                  >
+                    {Object.entries(activityLabels)
+                      .filter(([k]) => k !== "status_change")
+                      .map(([k, v]) => (
+                        <option key={k} value={k}>
+                          {v}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <label>
+                  <span className="field-label">活動日時</span>
+                  <Input
+                    type="datetime-local"
+                    name="occurred_at"
+                    defaultValue={localInputDate(new Date().toISOString())}
+                    required
+                  />
+                </label>
+                <div className="sm:col-span-2">
+                  <Lookup
+                    resource="contacts"
+                    label="企業担当者"
+                    companyId={companyId}
+                    value={contact}
+                    onChange={setContact}
+                  />
+                </div>
+                <label className="sm:col-span-2">
+                  <span className="field-label">件名</span>
+                  <Input
+                    name="title"
+                    maxLength={300}
+                    placeholder="例：業務課題のヒアリング"
+                  />
+                </label>
+                {type === "call" && (
+                  <>
+                    <details className="rounded-md border p-3 sm:col-span-2">
+                      <summary className="cursor-pointer text-xs text-muted-foreground">
+                        通話時間の詳細（任意）
+                      </summary>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <label>
+                          <span className="field-label">開始日時</span>
+                          <Input type="datetime-local" name="started_at" />
+                        </label>
+                        <label>
+                          <span className="field-label">終了日時</span>
+                          <Input type="datetime-local" name="ended_at" />
+                        </label>
+                        <label>
+                          <span className="field-label">通話時間（秒）</span>
+                          <Input
+                            type="number"
+                            name="duration_seconds"
+                            min={0}
+                            step={1}
+                          />
+                        </label>
+                      </div>
+                    </details>
+                  </>
+                )}
+                {type === "call" && callback && (
+                  <>
                     <label className="sm:col-span-2">
                       <span className="field-label">再架電タスク名</span>
                       <Input
@@ -292,17 +331,10 @@ export function ActivityDialog({
                       />
                     </label>
                     <label>
-                      <span className="field-label">再架電日時</span>
-                      <Input
-                        name="callback_due"
-                        type="datetime-local"
-                        required
-                      />
-                    </label>
-                    <label>
                       <span className="field-label">再架電の担当営業</span>
                       <select
                         name="callback_owner"
+                        aria-label="再架電の担当営業"
                         className="native-select"
                         defaultValue={profile.id}
                       >
@@ -313,10 +345,10 @@ export function ActivityDialog({
                         ))}
                       </select>
                     </label>
-                  </div>
+                  </>
                 )}
               </div>
-            )}
+            </details>
           </fieldset>
           {error && (
             <p role="alert" className="text-destructive">

@@ -228,9 +228,7 @@ function Navigation({ close }: { close?: () => void }) {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <p className="px-5 pb-2 text-[10px] font-semibold tracking-[0.15em] text-muted-foreground">
-        WORKSPACE
-      </p>
+
       <nav aria-label="メインナビゲーション" className="space-y-1 px-3">
         {nav.map(({ href, label, icon: Icon }) => (
           <Link
@@ -262,9 +260,6 @@ function Navigation({ close }: { close?: () => void }) {
           <Settings className="size-[18px]" />
           設定
         </Link>
-        <p className="px-3 pb-1 pt-5 text-xs text-muted-foreground">
-          営業の次の一手を、ここから。
-        </p>
       </div>
     </div>
   );

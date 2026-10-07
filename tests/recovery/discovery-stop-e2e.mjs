@@ -1,3 +1,4 @@
+import { expandSearchOptions } from "./search-options.mjs";
 // Real Auth/PostgREST/browser checks against a disposable local fixture only.
 // Candidate records below are synthetic. No live Gbiz or public website is called.
 import { chromium, expect } from "@playwright/test";
@@ -155,6 +156,7 @@ async function organization(p, id, destination = "/discover") {
     id,
   );
   await p.goto(base + destination);
+  if (destination === "/discover") await expandSearchOptions(p);
   await expect(
     p.getByRole("heading", {
       name: destination === "/discover" ? "企業を探す" : "企業",

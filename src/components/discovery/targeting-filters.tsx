@@ -19,9 +19,8 @@ type Props = {
 export function TargetingFilters({
   filters,
   disabled,
-  error,
   onChange,
-}: Props) {
+}: Omit<Props, "error">) {
   const preset = targetingPresets.find((item) => item.id === filters.presetId);
   const modified = preset && isTargetingPresetModified(filters, preset);
   const hasEmployeeRange = !!filters.employeeMin || !!filters.employeeMax;
@@ -62,75 +61,6 @@ export function TargetingFilters({
       </p>
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="min-w-0 space-y-2">
-          <span className="field-label">従業員数</span>
-          <div className="flex items-center gap-2">
-            <Input
-              id="discovery-employee-min"
-              aria-label="従業員数の下限"
-              aria-describedby={error ? "discovery-targeting-error" : undefined}
-              type="text"
-              inputMode="numeric"
-              maxLength={10}
-              placeholder="下限なし"
-              value={filters.employeeMin}
-              onChange={(event) =>
-                onChange({ employeeMin: event.target.value })
-              }
-              className="min-w-0 bg-white"
-            />
-            <span className="shrink-0 text-sm">〜</span>
-            <Input
-              id="discovery-employee-max"
-              aria-label="従業員数の上限"
-              aria-describedby={error ? "discovery-targeting-error" : undefined}
-              type="text"
-              inputMode="numeric"
-              maxLength={10}
-              placeholder="上限なし"
-              value={filters.employeeMax}
-              onChange={(event) =>
-                onChange({ employeeMax: event.target.value })
-              }
-              className="min-w-0 bg-white"
-            />
-            <span className="shrink-0 text-sm">人</span>
-          </div>
-          <div
-            className="flex flex-wrap gap-2"
-            role="group"
-            aria-label="従業員数の目安"
-          >
-            {[
-              ["5", "20"],
-              ["10", "50"],
-              ["50", "100"],
-            ].map(([min, max]) => (
-              <Button
-                key={min}
-                type="button"
-                size="sm"
-                variant="outline"
-                aria-pressed={
-                  filters.employeeMin === min && filters.employeeMax === max
-                }
-                onClick={() => onChange({ employeeMin: min, employeeMax: max })}
-                className="h-7 px-2 text-xs"
-              >
-                {min}〜{max}人
-              </Button>
-            ))}
-            {(filters.employeeMin || filters.employeeMax) && (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-7 px-2 text-xs"
-                onClick={() => onChange({ employeeMin: "", employeeMax: "" })}
-              >
-                人数指定を解除
-              </Button>
-            )}
-          </div>
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -188,15 +118,6 @@ export function TargetingFilters({
           )}
         </div>
       </div>
-      {error && (
-        <p
-          id="discovery-targeting-error"
-          role="alert"
-          className="text-sm text-destructive"
-        >
-          {error}
-        </p>
-      )}
       {preset && (
         <details className="rounded-md border px-3 py-2 text-sm">
           <summary className="cursor-pointer font-medium">
@@ -213,6 +134,86 @@ export function TargetingFilters({
           </p>
         </details>
       )}
+    </fieldset>
+  );
+}
+
+export function EmployeeRangeFilters({
+  filters,
+  disabled,
+  error,
+  onChange,
+}: Props) {
+  return (
+    <fieldset disabled={disabled} className="min-w-0">
+      {" "}
+      <div className="min-w-0 space-y-2">
+        <span className="field-label">従業員数</span>
+        <div className="flex items-center gap-2">
+          <Input
+            id="discovery-employee-min"
+            aria-label="従業員数の下限"
+            aria-describedby={error ? "discovery-targeting-error" : undefined}
+            type="text"
+            inputMode="numeric"
+            maxLength={10}
+            placeholder="下限なし"
+            value={filters.employeeMin}
+            onChange={(event) => onChange({ employeeMin: event.target.value })}
+            className="min-w-0 bg-white"
+          />
+          <span className="shrink-0 text-sm">〜</span>
+          <Input
+            id="discovery-employee-max"
+            aria-label="従業員数の上限"
+            aria-describedby={error ? "discovery-targeting-error" : undefined}
+            type="text"
+            inputMode="numeric"
+            maxLength={10}
+            placeholder="上限なし"
+            value={filters.employeeMax}
+            onChange={(event) => onChange({ employeeMax: event.target.value })}
+            className="min-w-0 bg-white"
+          />
+          <span className="shrink-0 text-sm">人</span>
+        </div>
+        <div
+          className="flex flex-wrap gap-2"
+          role="group"
+          aria-label="従業員数の目安"
+        >
+          {[
+            ["5", "20"],
+            ["10", "50"],
+            ["50", "100"],
+          ].map(([min, max]) => (
+            <Button
+              key={min}
+              type="button"
+              size="sm"
+              variant="outline"
+              aria-pressed={
+                filters.employeeMin === min && filters.employeeMax === max
+              }
+              onClick={() => onChange({ employeeMin: min, employeeMax: max })}
+              className="h-7 px-2 text-xs"
+            >
+              {min}〜{max}人
+            </Button>
+          ))}
+          {(filters.employeeMin || filters.employeeMax) && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs"
+              onClick={() => onChange({ employeeMin: "", employeeMax: "" })}
+            >
+              人数指定を解除
+            </Button>
+          )}
+        </div>
+      </div>
     </fieldset>
   );
 }

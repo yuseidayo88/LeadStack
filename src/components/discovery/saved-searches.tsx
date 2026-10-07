@@ -113,84 +113,91 @@ export function SavedDiscoverySearches({
       role="region"
       aria-label="保存した検索条件"
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={
-            disabled ||
-            saving ||
-            !!targetingFilterError(filters) ||
-            !chips.length
-          }
-          onClick={() => {
-            setName(
-              chips
-                .map((chip) => chip.label)
-                .join("・")
-                .slice(0, 40),
-            );
-            setError("");
-            setOpen(true);
-          }}
-        >
-          <Bookmark />
-          条件を保存
-        </Button>
-        <span className="text-xs text-muted-foreground">
-          よく使う条件 {items.length}/{SAVED_SEARCH_LIMIT}件
-        </span>
-      </div>
-      {!!items.length && (
-        <div className="flex flex-wrap gap-2">
-          {items.map((item) => (
-            <div
-              key={item.id}
-              className="flex min-w-0 max-w-full items-center rounded-md border"
+      <details className="rounded-md border px-3 py-2">
+        <summary className="cursor-pointer text-sm font-medium">
+          保存した検索条件（{items.length}件）
+        </summary>
+        <div className="mt-3 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={
+                disabled ||
+                saving ||
+                !!targetingFilterError(filters) ||
+                !chips.length
+              }
+              onClick={() => {
+                setName(
+                  chips
+                    .map((chip) => chip.label)
+                    .join("・")
+                    .slice(0, 40),
+                );
+                setError("");
+                setOpen(true);
+              }}
             >
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="min-w-0 flex-1 shrink justify-start"
-                disabled={disabled || saving}
-                aria-label={`保存条件「${item.name}」を呼び出す`}
-                title={item.name}
-                onClick={() => onApply({ ...item.filters })}
-              >
-                <span className="truncate">{item.name}</span>
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                disabled={saving}
-                aria-label={`保存条件「${item.name}」を削除`}
-                onClick={() =>
-                  void write(
-                    (current) =>
-                      current.filter((saved) => saved.id !== item.id),
-                    "保存した条件を削除しました",
-                  )
-                }
-              >
-                <X aria-hidden="true" />
-              </Button>
+              <Bookmark />
+              条件を保存
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              よく使う条件 {items.length}/{SAVED_SEARCH_LIMIT}件
+            </span>
+          </div>
+          {!!items.length && (
+            <div className="flex flex-wrap gap-2">
+              {items.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex min-w-0 max-w-full items-center rounded-md border"
+                >
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="min-w-0 flex-1 shrink justify-start"
+                    disabled={disabled || saving}
+                    aria-label={`保存条件「${item.name}」を呼び出す`}
+                    title={item.name}
+                    onClick={() => onApply({ ...item.filters })}
+                  >
+                    <span className="truncate">{item.name}</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={saving}
+                    aria-label={`保存条件「${item.name}」を削除`}
+                    onClick={() =>
+                      void write(
+                        (current) =>
+                          current.filter((saved) => saved.id !== item.id),
+                        "保存した条件を削除しました",
+                      )
+                    }
+                  >
+                    <X aria-hidden="true" />
+                  </Button>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
+          {!!items.length && (
+            <p className="text-xs text-muted-foreground">
+              呼び出すと取得済み候補を絞り込みます。外部の企業検索は検索ボタンで開始します。
+            </p>
+          )}
+          {error && !open && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
         </div>
-      )}
-      {!!items.length && (
-        <p className="text-xs text-muted-foreground">
-          呼び出すと取得済み候補を絞り込みます。外部の企業検索は検索ボタンで開始します。
-        </p>
-      )}
-      {error && !open && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
+      </details>
       <Dialog
         open={open}
         onOpenChange={(value) => {

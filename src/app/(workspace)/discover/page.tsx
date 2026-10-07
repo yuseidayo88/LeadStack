@@ -33,10 +33,14 @@ import {
 } from "@/components/crm/common";
 import { SearchableSelect } from "@/components/crm/searchable-select";
 import { ActivityDialog } from "@/components/crm/activity";
+import { CandidateMobileList } from "@/components/discovery/candidate-mobile-list";
 import { CandidateDialog } from "@/components/discovery/candidate-dialog";
 import { PhoneResearchDialog } from "@/components/discovery/phone-research-dialog";
 import { PHONE_RESEARCH_BATCH_LIMIT } from "@/lib/discovery/phone-research";
-import { TargetingFilters } from "@/components/discovery/targeting-filters";
+import {
+  EmployeeRangeFilters,
+  TargetingFilters,
+} from "@/components/discovery/targeting-filters";
 import { DiscoveryScanPanel } from "@/components/discovery/scan-panel";
 import { SavedDiscoverySearches } from "@/components/discovery/saved-searches";
 import { DiscoveryFilterChips } from "@/components/discovery/filter-chips";
@@ -346,7 +350,7 @@ function OrganizationDiscovery() {
           <div>
             <h2 className="font-semibold">企業の検索条件</h2>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              所在地は法人の住所です。検索条件はこのブラウザに組織ごとに保存します。
+              法人の所在地で検索します。条件はこのブラウザに組織ごとに保存します。
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -361,18 +365,6 @@ function OrganizationDiscovery() {
             )}
           </div>
         </div>
-        <SavedDiscoverySearches
-          key={`${profile.id}.${base}`}
-          base={base}
-          actorId={profile.id}
-          filters={filters}
-          disabled={scan.running || scan.blocked || removing}
-          onApply={(saved) => {
-            void scan.cancel();
-            setRefreshDetails(false);
-            changeFilters(saved);
-          }}
-        />
         <fieldset className="grid gap-3 md:grid-cols-[minmax(180px,.8fr)_minmax(220px,1fr)_minmax(200px,1.3fr)]">
           <div>
             <label className="field-label" htmlFor="discovery-prefecture">
@@ -408,46 +400,28 @@ function OrganizationDiscovery() {
               }}
             />
           </div>
-          <label>
-            <span className="field-label">企業名・法人番号（任意）</span>
-            <div className="relative">
-              <Search
-                className="absolute left-3 top-2.5 size-4 text-muted-foreground"
-                aria-hidden="true"
-              />
-              <Input
-                className="bg-white pl-9"
-                placeholder="任意：企業名が分からなくても検索できます"
-                value={search}
-                maxLength={200}
-                onChange={(event) => {
-                  changeFilters({ search: event.target.value });
-                }}
-              />
-            </div>
-          </label>
+          <EmployeeRangeFilters
+            filters={filters}
+            disabled={false}
+            error={filterError}
+            onChange={changeFilters}
+          />
         </fieldset>
-        <TargetingFilters
-          filters={filters}
-          disabled={false}
-          error={filterError}
-          onChange={changeFilters}
-        />
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-3 border-t pt-3">
-          {Object.entries(presenceLabels).map(([key, label]) => (
-            <label key={key} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={filters[key as Presence]}
-                onChange={(event) => {
-                  changeFilters({ [key]: event.target.checked });
-                }}
-              />
-              {label}
-            </label>
-          ))}
-        </div>
         <DiscoveryFilterChips filters={filters} onChange={changeFilters} />
+        {refreshDetails && (
+          <p className="text-xs text-muted-foreground">
+            取得済み情報の更新：有効（詳細条件で変更できます）
+          </p>
+        )}
+        {filterError && (
+          <p
+            id="discovery-targeting-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
+            {filterError}
+          </p>
+        )}
         <DiscoveryScanPanel
           scan={scan}
           canWrite={canWrite}
@@ -457,52 +431,125 @@ function OrganizationDiscovery() {
           disabled={!!filterError || filtersSettling || removing}
           resultsUpdating={rows.isValidating}
           resultsError={!!rows.error}
-          refreshDetails={refreshDetails}
-          onRefreshDetailsChange={(value) => {
-            void scan.cancel();
-            setRefreshDetails(value);
-          }}
           onStart={startScan}
         />
-        {preset && (
-          <details className="text-xs text-muted-foreground">
-            <summary className="cursor-pointer">
-              企業名でさらに絞る（任意）
-            </summary>
-            <div
-              className="mt-2 flex flex-wrap gap-2"
-              role="group"
-              aria-label="企業名で取得する候補"
-            >
-              {preset.nameHints.map((hint) => (
-                <Button
-                  key={hint}
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  aria-pressed={search === hint}
-                  onClick={() => changeFilters({ search: hint })}
-                  className="h-7 px-2 text-xs"
-                >
-                  {hint}
-                </Button>
+        <details
+          className="rounded-md border px-3 py-2"
+          id="discovery-advanced"
+        >
+          <summary className="cursor-pointer text-sm font-medium">
+            詳細条件・営業向けのおすすめ
+          </summary>
+          <div className="mt-3 space-y-3">
+            <label>
+              <span className="field-label">企業名・法人番号（任意）</span>
+              <div className="relative">
+                <Search
+                  className="absolute left-3 top-2.5 size-4 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <Input
+                  className="bg-white pl-9"
+                  placeholder="任意：企業名が分からなくても検索できます"
+                  value={search}
+                  maxLength={200}
+                  onChange={(event) => {
+                    changeFilters({ search: event.target.value });
+                  }}
+                />
+              </div>
+            </label>
+            <TargetingFilters
+              filters={filters}
+              disabled={false}
+              onChange={changeFilters}
+            />
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-3 border-t pt-3">
+              {Object.entries(presenceLabels).map(([key, label]) => (
+                <label key={key} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={filters[key as Presence]}
+                    onChange={(event) => {
+                      changeFilters({ [key]: event.target.checked });
+                    }}
+                  />
+                  {label}
+                </label>
               ))}
             </div>
-          </details>
-        )}
-        {search && (
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span>「{search}」を企業名・法人番号の条件に指定しています。</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => changeFilters({ search: "" })}
-              className="h-7 px-2 text-xs"
-            >
-              企業名・法人番号の条件だけ解除
-            </Button>
+            {canWrite && (
+              <div className="space-y-1 border-t pt-3 text-xs text-muted-foreground">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={refreshDetails}
+                    disabled={scan.running || scan.blocked}
+                    onChange={(event) => {
+                      void scan.cancel();
+                      setRefreshDetails(event.target.checked);
+                    }}
+                  />
+                  取得済みの企業情報も更新する（時間がかかります）
+                </label>
+                <p>通常は24時間以内に取得した企業の詳細を再利用します。</p>
+              </div>
+            )}
+            {preset && (
+              <details className="text-xs text-muted-foreground">
+                <summary className="cursor-pointer">
+                  企業名でさらに絞る（任意）
+                </summary>
+                <div
+                  className="mt-2 flex flex-wrap gap-2"
+                  role="group"
+                  aria-label="企業名で取得する候補"
+                >
+                  {preset.nameHints.map((hint) => (
+                    <Button
+                      key={hint}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      aria-pressed={search === hint}
+                      onClick={() => changeFilters({ search: hint })}
+                      className="h-7 px-2 text-xs"
+                    >
+                      {hint}
+                    </Button>
+                  ))}
+                </div>
+              </details>
+            )}
+            {search && (
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span>
+                  「{search}」を企業名・法人番号の条件に指定しています。
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => changeFilters({ search: "" })}
+                  className="h-7 px-2 text-xs"
+                >
+                  企業名・法人番号の条件だけ解除
+                </Button>
+              </div>
+            )}{" "}
           </div>
-        )}
+        </details>
+        <SavedDiscoverySearches
+          key={`${profile.id}.${base}`}
+          base={base}
+          actorId={profile.id}
+          filters={filters}
+          disabled={scan.running || scan.blocked || removing}
+          onApply={(saved) => {
+            void scan.cancel();
+            setRefreshDetails(false);
+            changeFilters(saved);
+          }}
+        />
       </div>
 
       <section
@@ -548,11 +595,15 @@ function OrganizationDiscovery() {
             表示件数は取得済み候補の件数です。全国の企業や検索条件に合う企業の全件数ではありません。
           </p>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p>
-              架電リストの作成：候補を選択 →「電話番号を調べる」→
-              出典を確認して保存 →
-              営業リストへ取込。Gビズインフォの電話番号はないため、公式サイトから補完します。
-            </p>
+            <details>
+              <summary className="cursor-pointer">
+                電話番号を補完して架電リストを作るには
+              </summary>
+              <p className="mt-2">
+                候補を選択 →「電話番号を調べる」→ 出典を確認して保存 →
+                営業リストへ取込。Gビズインフォに電話番号は含まれないため、公式サイトから補完します。
+              </p>
+            </details>
             <Button
               variant="outline"
               size="sm"
@@ -632,207 +683,226 @@ function OrganizationDiscovery() {
               rows.isValidating)) ? (
           <Loading label="企業の候補を読み込み中" />
         ) : data.data.length ? (
-          <div className="overflow-x-auto">
-            <table className="data-table min-w-[1060px]">
-              <thead>
-                <tr>
-                  {canWrite && (
-                    <th scope="col" className="w-10">
-                      <input
-                        type="checkbox"
-                        aria-label="このページの候補をすべて選択"
-                        checked={allSelected}
-                        onChange={(event) => togglePage(event.target.checked)}
-                      />
-                    </th>
-                  )}
-                  <th
-                    scope="col"
-                    aria-sort={
-                      sort === "name"
-                        ? direction === "asc"
-                          ? "ascending"
-                          : "descending"
-                        : "none"
-                    }
-                  >
-                    <button
-                      className="flex items-center gap-2"
-                      onClick={() => order("name")}
-                    >
-                      企業名
-                      <ArrowUpDown className="size-3" />
-                    </button>
-                  </th>
-                  <th scope="col">所在地・業種</th>
-                  <th scope="col">電話番号</th>
-                  <th scope="col">Webサイト</th>
-                  <th
-                    scope="col"
-                    aria-sort={
-                      sort === "employee_number"
-                        ? direction === "asc"
-                          ? "ascending"
-                          : "descending"
-                        : "none"
-                    }
-                  >
-                    <button
-                      className="flex items-center gap-2"
-                      onClick={() => order("employee_number")}
-                    >
-                      従業員数
-                      <ArrowUpDown className="size-3" />
-                    </button>
-                  </th>
-                  <th
-                    scope="col"
-                    aria-sort={
-                      sort === "fetched_at"
-                        ? direction === "asc"
-                          ? "ascending"
-                          : "descending"
-                        : "none"
-                    }
-                  >
-                    <button
-                      className="flex items-center gap-2"
-                      onClick={() => order("fetched_at")}
-                    >
-                      取得日時
-                      <ArrowUpDown className="size-3" />
-                    </button>
-                  </th>
-                  <th scope="col">営業リスト</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.data.map((candidate) => (
-                  <tr
-                    key={candidate.id}
-                    className={
-                      selected.includes(candidate.id)
-                        ? "bg-teal-50/40"
-                        : undefined
-                    }
-                  >
+          <>
+            <CandidateMobileList
+              candidates={data.data}
+              selected={selected}
+              canWrite={canWrite}
+              allSelected={allSelected}
+              sort={sort}
+              direction={direction}
+              onToggle={toggle}
+              onTogglePage={togglePage}
+              onSort={(sort, direction) => changeFilters({ sort, direction })}
+              onFocus={setFocused}
+              onImport={(id) => setImportIds([id])}
+            />
+            <div className="hidden overflow-x-auto md:block">
+              <table className="data-table min-w-[1060px]">
+                <thead>
+                  <tr>
                     {canWrite && (
-                      <td>
+                      <th scope="col" className="w-10">
                         <input
                           type="checkbox"
-                          aria-label={`${candidate.name}を選択`}
-                          checked={selected.includes(candidate.id)}
-                          disabled={
-                            selected.length >= 50 &&
-                            !selected.includes(candidate.id)
-                          }
-                          onChange={(event) =>
-                            toggle(candidate.id, event.target.checked)
-                          }
+                          aria-label="このページの候補をすべて選択"
+                          checked={allSelected}
+                          onChange={(event) => togglePage(event.target.checked)}
                         />
-                      </td>
+                      </th>
                     )}
-                    <td>
+                    <th
+                      scope="col"
+                      aria-sort={
+                        sort === "name"
+                          ? direction === "asc"
+                            ? "ascending"
+                            : "descending"
+                          : "none"
+                      }
+                    >
                       <button
-                        className="block max-w-64 text-left font-medium text-primary hover:underline"
-                        onClick={() => setFocused(candidate)}
+                        className="flex items-center gap-2"
+                        onClick={() => order("name")}
                       >
-                        {candidate.name}
+                        企業名
+                        <ArrowUpDown className="size-3" />
                       </button>
-                      <p className="mt-1 font-mono text-[11px] text-muted-foreground">
-                        {candidate.corporate_number}
-                      </p>
-                      {candidate.business_summary && (
-                        <p
-                          className="mt-1 line-clamp-2 max-w-72 text-xs text-muted-foreground"
-                          title={candidate.business_summary}
-                        >
-                          {candidate.business_summary}
-                        </p>
+                    </th>
+                    <th scope="col">所在地・業種</th>
+                    <th scope="col">電話番号</th>
+                    <th scope="col">Webサイト</th>
+                    <th
+                      scope="col"
+                      aria-sort={
+                        sort === "employee_number"
+                          ? direction === "asc"
+                            ? "ascending"
+                            : "descending"
+                          : "none"
+                      }
+                    >
+                      <button
+                        className="flex items-center gap-2"
+                        onClick={() => order("employee_number")}
+                      >
+                        従業員数
+                        <ArrowUpDown className="size-3" />
+                      </button>
+                    </th>
+                    <th
+                      scope="col"
+                      aria-sort={
+                        sort === "fetched_at"
+                          ? direction === "asc"
+                            ? "ascending"
+                            : "descending"
+                          : "none"
+                      }
+                    >
+                      <button
+                        className="flex items-center gap-2"
+                        onClick={() => order("fetched_at")}
+                      >
+                        取得日時
+                        <ArrowUpDown className="size-3" />
+                      </button>
+                    </th>
+                    <th scope="col">営業リスト</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.data.map((candidate) => (
+                    <tr
+                      key={candidate.id}
+                      className={
+                        selected.includes(candidate.id)
+                          ? "bg-teal-50/40"
+                          : undefined
+                      }
+                    >
+                      {canWrite && (
+                        <td>
+                          <input
+                            type="checkbox"
+                            aria-label={`${candidate.name}を選択`}
+                            checked={selected.includes(candidate.id)}
+                            disabled={
+                              selected.length >= 50 &&
+                              !selected.includes(candidate.id)
+                            }
+                            onChange={(event) =>
+                              toggle(candidate.id, event.target.checked)
+                            }
+                          />
+                        </td>
                       )}
-                      {keywords &&
-                        (
-                          candidate.matched_business_keywords ??
-                          matchingBusinessKeywords(candidate, keywords)
-                        ).length > 0 && (
-                          <p className="mt-1 max-w-72 text-[11px] text-muted-foreground">
-                            名称・事業内容に一致：
-                            {(
-                              candidate.matched_business_keywords ??
-                              matchingBusinessKeywords(candidate, keywords)
-                            ).join("・")}
-                          </p>
-                        )}
-                    </td>
-                    <td className="max-w-60 text-xs">
-                      <p
-                        className="line-clamp-2"
-                        title={candidate.location || undefined}
-                      >
-                        {candidate.location || candidate.prefecture || "未確認"}
-                      </p>
-                      <p
-                        className="mt-1 line-clamp-2 text-muted-foreground"
-                        title={candidate.industry_labels.join("・")}
-                      >
-                        {candidate.industry_labels.join("・") || "業種：未確認"}
-                      </p>
-                    </td>
-                    <td className="text-xs">
-                      <PhoneLink value={candidate.phone} />
-                      {!candidate.phone && candidate.enrichment_checked_at && (
+                      <td>
                         <button
-                          className="mt-1 block text-xs text-primary hover:underline"
+                          className="block max-w-64 text-left font-medium text-primary hover:underline"
                           onClick={() => setFocused(candidate)}
                         >
-                          サイトの調査結果
+                          {candidate.name}
                         </button>
-                      )}
-                    </td>
-                    <td className="text-xs">
-                      <WebsiteLink value={candidate.website_url} />
-                    </td>
-                    <td className="whitespace-nowrap text-right text-xs">
-                      {candidate.employee_number == null ? (
-                        <span className="text-muted-foreground">未確認</span>
-                      ) : (
-                        employeeLabel(candidate.employee_number)
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap text-xs text-muted-foreground">
-                      {fetchedLabel(candidate.fetched_at)}
-                    </td>
-                    <td>
-                      {candidate.company_id ? (
-                        <div className="space-y-2">
-                          <Link
-                            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                            href={`/companies/${candidate.company_id}`}
+                        <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+                          {candidate.corporate_number}
+                        </p>
+                        {candidate.business_summary && (
+                          <p
+                            className="mt-1 line-clamp-2 max-w-72 text-xs text-muted-foreground"
+                            title={candidate.business_summary}
                           >
-                            登録済み
-                            <ExternalLink className="size-3" />
-                          </Link>
-                          {canWrite && (
-                            <ActivityDialog
-                              companyId={candidate.company_id}
-                              companyName={
-                                candidate.crm_company_name || candidate.name
-                              }
-                              phone={candidate.crm_company_phone}
-                            />
+                            {candidate.business_summary}
+                          </p>
+                        )}
+                        {keywords &&
+                          (
+                            candidate.matched_business_keywords ??
+                            matchingBusinessKeywords(candidate, keywords)
+                          ).length > 0 && (
+                            <p className="mt-1 max-w-72 text-[11px] text-muted-foreground">
+                              名称・事業内容に一致：
+                              {(
+                                candidate.matched_business_keywords ??
+                                matchingBusinessKeywords(candidate, keywords)
+                              ).join("・")}
+                            </p>
                           )}
-                        </div>
-                      ) : (
-                        <span className="whitespace-nowrap text-xs text-muted-foreground">
-                          未取込
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      </td>
+                      <td className="max-w-60 text-xs">
+                        <p
+                          className="line-clamp-2"
+                          title={candidate.location || undefined}
+                        >
+                          {candidate.location ||
+                            candidate.prefecture ||
+                            "未確認"}
+                        </p>
+                        <p
+                          className="mt-1 line-clamp-2 text-muted-foreground"
+                          title={candidate.industry_labels.join("・")}
+                        >
+                          {candidate.industry_labels.join("・") ||
+                            "業種：未確認"}
+                        </p>
+                      </td>
+                      <td className="text-xs">
+                        <PhoneLink value={candidate.phone} />
+                        {!candidate.phone &&
+                          candidate.enrichment_checked_at && (
+                            <button
+                              className="mt-1 block text-xs text-primary hover:underline"
+                              onClick={() => setFocused(candidate)}
+                            >
+                              サイトの調査結果
+                            </button>
+                          )}
+                      </td>
+                      <td className="text-xs">
+                        <WebsiteLink value={candidate.website_url} />
+                      </td>
+                      <td className="whitespace-nowrap text-right text-xs">
+                        {candidate.employee_number == null ? (
+                          <span className="text-muted-foreground">未確認</span>
+                        ) : (
+                          employeeLabel(candidate.employee_number)
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap text-xs text-muted-foreground">
+                        {fetchedLabel(candidate.fetched_at)}
+                      </td>
+                      <td>
+                        {candidate.company_id ? (
+                          <div className="space-y-2">
+                            <Link
+                              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                              href={`/companies/${candidate.company_id}`}
+                            >
+                              登録済み
+                              <ExternalLink className="size-3" />
+                            </Link>
+                            {canWrite && (
+                              <ActivityDialog
+                                companyId={candidate.company_id}
+                                companyName={
+                                  candidate.crm_company_name || candidate.name
+                                }
+                                phone={candidate.crm_company_phone}
+                              />
+                            )}
+                          </div>
+                        ) : (
+                          <span className="whitespace-nowrap text-xs text-muted-foreground">
+                            未取込
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         ) : (
           <Empty
             title={

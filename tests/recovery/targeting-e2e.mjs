@@ -1,3 +1,4 @@
+import { expandSearchOptions } from "./search-options.mjs";
 // Real Auth/PostgREST/browser checks against a disposable local fixture only.
 // Candidate records below are synthetic. No live Gbiz or public website is called.
 import { chromium, expect } from "@playwright/test";
@@ -132,6 +133,7 @@ async function organization(p, id, destination = "/discover") {
     id,
   );
   await p.goto(base + destination);
+  if (destination === "/discover") await expandSearchOptions(p);
   await expect(
     p.getByRole("heading", {
       name: destination === "/discover" ? "企業を探す" : "企業",
@@ -150,7 +152,9 @@ async function choose(p, label, option, search = option) {
 }
 
 async function searchFor(value) {
-  await page.getByLabel("企業名・法人番号（任意）", { exact: true }).fill(value);
+  await page
+    .getByLabel("企業名・法人番号（任意）", { exact: true })
+    .fill(value);
 }
 
 async function visibleCount(count) {
@@ -586,6 +590,7 @@ try {
   await page.getByLabel("業種が未確認の企業も含める", { exact: true }).check();
   await visibleCount(4);
   await page.reload();
+  await expandSearchOptions(page);
   await visibleCount(4);
   await expect(page.getByLabel("従業員数の下限", { exact: true })).toHaveValue(
     "10",
@@ -639,6 +644,7 @@ try {
   await visibleCount(4);
   await secondTab.close();
   await page.reload();
+  await expandSearchOptions(page);
   await visibleCount(3);
   await expect(page.getByLabel("従業員数の下限", { exact: true })).toHaveValue(
     "20",
@@ -689,6 +695,7 @@ try {
     page.getByRole("combobox", { name: "都道府県", exact: true }),
   ).toContainText("すべて");
   await page.reload();
+  await expandSearchOptions(page);
   await visibleCount(seed.length);
   await expect(page.getByLabel("従業員数の下限", { exact: true })).toHaveValue(
     "",

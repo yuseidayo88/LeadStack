@@ -161,14 +161,6 @@ export default function CompanyDetail() {
                         </a>
                       </Button>
                     )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled
-                      title="Zoom Phone連携は今後対応予定です"
-                    >
-                      Zoom Phoneで架電（準備中）
-                    </Button>
                   </div>
                   <dl className="grid gap-x-6 gap-y-5 sm:grid-cols-2">
                     {info.map(([k, v]) => (

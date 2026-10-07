@@ -64,7 +64,7 @@ export function Empty({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center gap-3 px-6 py-14 text-center">
+    <div className="flex flex-col items-center gap-3 px-6 py-7 text-center">
       <div className="rounded-xl bg-muted p-3 text-muted-foreground">
         <Inbox className="size-6" />
       </div>
@@ -143,6 +143,7 @@ export function Pagination({
   useEffect(() => {
     if (count !== undefined && page > pages) onChange(pages);
   }, [count, page, pages, onChange]);
+  if (count === 0) return null;
   return (
     <div className="flex items-center justify-between gap-4 border-t px-4 py-3 text-xs text-muted-foreground">
       <span>

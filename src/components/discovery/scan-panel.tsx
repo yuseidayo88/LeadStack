@@ -16,8 +16,6 @@ type Props = {
   disabled: boolean;
   resultsUpdating: boolean;
   resultsError: boolean;
-  refreshDetails: boolean;
-  onRefreshDetailsChange: (value: boolean) => void;
   onStart: (resume: boolean) => void;
 };
 
@@ -30,8 +28,6 @@ export function DiscoveryScanPanel({
   disabled,
   resultsUpdating,
   resultsError,
-  refreshDetails,
-  onRefreshDetailsChange,
   onStart,
 }: Props) {
   const canStart =
@@ -63,9 +59,9 @@ export function DiscoveryScanPanel({
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium">企業名が分からなくても探せます</p>
+          <p className="text-sm font-medium">条件に合う企業を検索</p>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            都道府県・業種・人数・業務キーワードで検索。一致20社を目安に、最大200社の情報を順に確認します。
+            一致20社を目安に、最大200社を確認します。途中で停止・再開できます。
           </p>
         </div>
         {canWrite && (
@@ -119,22 +115,6 @@ export function DiscoveryScanPanel({
         <p className="text-xs text-muted-foreground">
           都道府県・業種・従業員数・業務キーワード・企業名のいずれかを指定してください。
         </p>
-      )}
-      {canWrite && (
-        <div className="space-y-1 text-xs text-muted-foreground">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={refreshDetails}
-              disabled={scan.running || scan.blocked}
-              onChange={(event) => onRefreshDetailsChange(event.target.checked)}
-            />
-            取得済みの企業情報も更新する（時間がかかります）
-          </label>
-          <p>
-            通常は24時間以内に取得した企業の詳細を再利用して、待ち時間を減らします。
-          </p>
-        </div>
       )}
       {configured === false && (
         <p role="status" className="text-xs">
@@ -252,9 +232,6 @@ export function DiscoveryScanPanel({
           Gビズインフォに電話番号は含まれないため、「電話番号あり」では保存済みの電話番号がある候補が対象です。
         </p>
       )}
-      <p className="text-xs leading-relaxed text-muted-foreground">
-        外部データを少しずつ確認するため、見つかった件数は全国の該当企業の総数ではありません。検索中も取得済み候補を確認できます。
-      </p>
     </div>
   );
 }

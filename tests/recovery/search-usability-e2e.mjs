@@ -1,3 +1,4 @@
+import { expandSearchOptions } from "./search-options.mjs";
 // Real Auth/PostgREST/browser checks against a disposable local fixture only.
 // Candidate records below are synthetic. No live Gbiz or public website is called.
 import { chromium, expect } from "@playwright/test";
@@ -132,6 +133,7 @@ async function organization(p, id, destination = "/discover") {
     id,
   );
   await p.goto(base + destination);
+  if (destination === "/discover") await expandSearchOptions(p);
   await expect(
     p.getByRole("heading", {
       name: destination === "/discover" ? "企業を探す" : "企業",
@@ -288,6 +290,7 @@ try {
     "10",
   );
   await page.reload();
+  await expandSearchOptions(page);
   await expect(callSaved("東京の架電候補")).toBeVisible();
   await expect(
     page.getByLabel("電話番号あり", { exact: true }),
@@ -318,6 +321,7 @@ try {
     value: original,
   });
   await page.reload();
+  await expandSearchOptions(page);
   await expect(callSaved("東京の架電候補")).toHaveCount(0);
   await page.evaluate(
     ({ key, value }) =>
@@ -334,6 +338,7 @@ try {
     value: original,
   });
   await page.reload();
+  await expandSearchOptions(page);
   await expect(callSaved("東京の架電候補")).toBeVisible();
   pass(
     "Duplicate names never overwrite; another organization's or actor's stored payload is ignored even when copied under the current key",
@@ -346,6 +351,7 @@ try {
   const second = await context.newPage();
   second.setDefaultTimeout(15000);
   await second.goto(base + "/discover");
+  await expandSearchOptions(second);
   await expect(callSaved("東京の架電候補", second)).toBeVisible();
   await choose(second, "都道府県", "大阪府");
   await Promise.all([save("東京の追加条件"), save("大阪の追加条件", second)]);
@@ -429,6 +435,7 @@ try {
     value: JSON.stringify(full),
   });
   await page.reload();
+  await expandSearchOptions(page);
   await savedRegion()
     .getByRole("button", { name: "条件を保存", exact: true })
     .click();
