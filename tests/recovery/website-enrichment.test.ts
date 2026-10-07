@@ -420,6 +420,73 @@ test.each([
   },
 );
 
+test.each([
+  "<p>当社はCAPTCHA導入の相談にも対応します。</p>",
+  "<p>フォームにはreCAPTCHAを利用しています。</p>",
+  '<a href="/articles/captcha-guide">CAPTCHAについての記事</a>',
+  '<script>var companySettings = { recaptcha: { sitekey: "public-key" } };</script>',
+  "<script>const fieldExample = 'name=\"password\"';</script>",
+  "<style>.captcha-help { color: green; }</style>",
+  '<!-- <div class="g-recaptcha">legacy form removed</div> -->',
+  '<script type="application/ld+json">{"description":"CAPTCHA導入支援"}</script>',
+  '<template><input name="password"></template>',
+])(
+  "reads public company information despite passive mentions: %s",
+  async (body) => {
+    replies.push(robots(), html(body + phoneHtml));
+    expect(await enrichOfficialWebsite(origin)).toMatchObject({
+      status: "found",
+      phone: "0312345678",
+      sourceUrl: `${origin}/`,
+    });
+    expect(mocks.request.mock.calls.map(([url]) => String(url))).toEqual([
+      `${origin}/robots.txt`,
+      `${origin}/`,
+    ]);
+  },
+);
+
+test.each([
+  '<form><input type="password" name="secret"></form>',
+  '<input NAME="pass&#119;ord">',
+  '<div class="g-recaptcha" data-sitekey="public-key"></div>',
+  '<button class="g-recaptcha" data-sitekey="public-key">送信</button>',
+  '<div class="h-captcha" data-sitekey="public-key"></div>',
+  '<div class="cf-turnstile" data-sitekey="public-key"></div>',
+  '<input name="captcha_code"><img src="/captcha.png">',
+  '<textarea name="g-recaptcha-response"></textarea>',
+  '<iframe src="https://www.google.com/recaptcha/api2/anchor"></iframe>',
+  '<script src="https://www.google.com/recaptcha/api.js"></script>',
+  '<script src="https://www.google.com/recaptcha/api.js">',
+  '<script src="https://js.hcaptcha.com/1/api.js"></script>',
+  '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js"></script>',
+  '<script src="/cdn-cgi/challenge-platform/h/g/orchestrate/chl_page/v1"></script>',
+  '<script>window._cf_chl_opt = { cType: "managed" };</script>',
+  '<script>grecaptcha.render("gate", {sitekey:"public-key"});</script>',
+  '<script>grecaptcha.enterprise.execute("public-key");</script>',
+  '<script>hcaptcha.render("gate");</script>',
+  '<script>turnstile.render("gate");</script>',
+  '<noscript><div class="g-recaptcha">Check</div></noscript>',
+  "<h1>Verify that you are human</h1>",
+  "<p>ロボットではないことを確認してください</p>",
+  "<p>Please complete the CAPTCHA to proceed.</p>",
+  "<p>画像認証を完了してください。</p>",
+])("keeps real authentication/challenge markup blocked: %s", async (body) => {
+  replies.push(
+    robots(),
+    html(body + phoneHtml + '<a href="/about">会社概要</a>'),
+  );
+  expect(await enrichOfficialWebsite(origin)).toMatchObject({
+    status: "blocked",
+    phone: null,
+    sourceUrl: null,
+    message: "認証またはアクセス確認が必要なページのため、取得を停止しました。",
+  });
+  // Never run challenge scripts, follow their iframe, submit a form, or continue
+  // to another company page after detecting an access gate.
+  expect(mocks.request).toHaveBeenCalledTimes(2);
+});
+
 test("respects X-Robots-Tag and rejects HTML disguised as robots text", async () => {
   replies.push(robots(), html(phoneHtml, { "x-robots-tag": "noindex" }));
   expect((await enrichOfficialWebsite(origin)).status).toBe("blocked");

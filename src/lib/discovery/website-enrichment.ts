@@ -404,7 +404,10 @@ function unescapeHtml(text: string): string {
   );
 }
 
-function visibleHtml(html: string): string {
+function visibleHtml(
+  html: string,
+  inspectInactive?: (element: string, tag: string, content: string) => void,
+): string {
   const lower = html.toLowerCase();
   const output: string[] = [];
   let offset = 0;
@@ -427,7 +430,13 @@ function visibleHtml(html: string): string {
     const tag = html.slice(start, end + 1);
     const ignored = /^<(script|style|noscript|template|svg)\b/i.exec(tag);
     if (ignored) {
-      const close = lower.indexOf(`</${ignored[1].toLowerCase()}`, end + 1);
+      const element = ignored[1].toLowerCase();
+      const close = lower.indexOf(`</${element}`, end + 1);
+      inspectInactive?.(
+        element,
+        tag,
+        html.slice(end + 1, close < 0 ? html.length : close),
+      );
       if (close < 0) break;
       const closeEnd = html.indexOf(">", close);
       if (closeEnd < 0) break;
@@ -620,6 +629,67 @@ function nextCompanyPage(
   return candidates.sort((a, b) => b.score - a.score)[0]?.url ?? null;
 }
 
+function accessGateMarkup(markup: string): boolean {
+  for (const match of markup.matchAll(
+    /<([a-z][a-z\d:-]{0,63})\b[^>]{0,4096}>/gi,
+  )) {
+    const tag = match[0];
+    const element = match[1].toLowerCase();
+    if (
+      element === "input" &&
+      (attribute(tag, "type")?.toLowerCase() === "password" ||
+        attribute(tag, "name")?.toLowerCase() === "password")
+    )
+      return true;
+    // Widgets/response fields are active controls. An article, stylesheet,
+    // comment or configuration variable merely mentioning CAPTCHA is not.
+    const identifiers = ["id", "class", "name"].flatMap((name) =>
+      (attribute(tag, name) ?? "").split(/\s+/),
+    );
+    if (
+      identifiers.some((value) =>
+        /^(?:(?:g-)?recaptcha|h-captcha|hcaptcha|cf-turnstile|cf-chl|captcha)(?:[-_:]|$)/i.test(
+          value,
+        ),
+      )
+    )
+      return true;
+    if (
+      ["iframe", "img"].includes(element) &&
+      /captcha|challenge-platform|challenges\.cloudflare\.com/i.test(
+        attribute(tag, "src") ?? "",
+      )
+    )
+      return true;
+  }
+  // Instructions to solve a challenge remain blocked; a bare product name or
+  // description mentioning CAPTCHA is not itself an access requirement.
+  return /verify (?:that )?you are human|ロボットではない|(?:complete|solve|enter)\s+(?:the\s+)?captcha|captcha\s+(?:is\s+)?required|画像認証を(?:完了|入力)/i.test(
+    textContent(markup),
+  );
+}
+
+function hasAccessGate(html: string): boolean {
+  let gated = false;
+  const markup = visibleHtml(html, (element, tag, content) => {
+    if (element === "noscript") {
+      gated ||= accessGateMarkup(visibleHtml(content));
+      return;
+    }
+    if (element !== "script") return;
+    // Still refuse concrete challenge integrations, even if company details
+    // appear alongside them. No script execution, token solving or form POST.
+    gated ||=
+      /captcha|cf-chl-|challenge-platform|challenges\.cloudflare\.com/i.test(
+        attribute(tag, "src") ?? "",
+      ) ||
+      /\b_cf_chl_opt\b|cf-chl-|challenge-platform|\b(?:grecaptcha(?:\.enterprise)?|hcaptcha|turnstile)\s*\.\s*(?:render|execute)\s*\(/i.test(
+        content,
+      );
+  });
+  return gated || accessGateMarkup(markup);
+}
+
 function checkHtml(page: Page): void {
   if (page.status === 401 || page.status === 403 || page.status === 429)
     blocked(
@@ -636,11 +706,7 @@ function checkHtml(page: Page): void {
     )
   )
     blocked("公式サイトのHTMLページを確認できませんでした。");
-  if (
-    /captcha|cf-chl-|challenge-platform|verify (?:that )?you are human|ロボットではない|name\s*=\s*["']?password\b/i.test(
-      page.body,
-    )
-  )
+  if (hasAccessGate(page.body))
     blocked("認証またはアクセス確認が必要なページのため、取得を停止しました。");
   if (
     /\b(?:noindex|nofollow|none)\b/i.test(
