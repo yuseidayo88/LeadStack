@@ -60,6 +60,12 @@ export type AcquireResponse = {
   message: string;
 };
 
+export type PhoneResearchResponse = {
+  candidate: Candidate;
+  outcome:
+    "checked" | "cached" | "existing_phone" | "missing_website" | "pending";
+};
+
 export type ScanCriteria = {
   prefecture?: string;
   name?: string;

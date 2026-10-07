@@ -5,6 +5,8 @@ import { discoveryInput, discoveryQuery } from "@/lib/discovery/schemas";
 import {
   acquireCandidates,
   enrichCandidate,
+  researchCandidatePhone,
+  confirmCandidatePhone,
   listCandidates,
   updateCandidate,
 } from "@/lib/discovery/service";
@@ -47,6 +49,12 @@ export async function POST(request: Request, context: Context) {
       return Response.json(await acquireCandidates(db, org, input));
     if (input.action === "enrich")
       return Response.json(await enrichCandidate(db, org, input.id));
+    if (input.action === "research_phone")
+      return Response.json(await researchCandidatePhone(db, org, input.id));
+    if (input.action === "confirm_phone")
+      return Response.json(
+        await confirmCandidatePhone(db, org, user.id, input),
+      );
     if (input.action === "update")
       return Response.json(await updateCandidate(db, org, user.id, input));
     if (input.action === "remove") {

@@ -171,6 +171,13 @@ export const discoveryInput = z.discriminatedUnion("action", [
     confirmed: z.literal(true),
   }),
   z.strictObject({ action: z.literal("enrich"), id: z.uuid() }),
+  z.strictObject({ action: z.literal("research_phone"), id: z.uuid() }),
+  z.strictObject({
+    action: z.literal("confirm_phone"),
+    id: z.uuid(),
+    expectedUpdatedAt: z.iso.datetime({ offset: true }),
+    confirmed: z.literal(true),
+  }),
   z.strictObject({
     action: z.literal("update"),
     id: z.uuid(),

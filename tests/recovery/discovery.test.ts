@@ -27,6 +27,8 @@ import { discoveryInput, discoveryQuery } from "@/lib/discovery/schemas";
 import {
   acquireCandidates,
   enrichCandidate,
+  researchCandidatePhone,
+  confirmCandidatePhone,
   listCandidates,
   updateCandidate,
 } from "@/lib/discovery/service";
@@ -1319,5 +1321,237 @@ describe("discovery service tenant and failure behavior", () => {
     expect(
       db.queries[2].calls.find((call) => call.method === "update")?.args[0],
     ).not.toHaveProperty("phone");
+  });
+});
+
+describe("bounded phone research and confirmation", () => {
+  const proposal = {
+    status: "found" as const,
+    phone: "0312345678",
+    employeeNumber: 90,
+    sourceUrl: "https://official.example/about",
+    evidence: "電話番号: 0312345678",
+    message: null,
+    checkedAt: timestamp,
+  };
+  const researched = () =>
+    row({
+      website_url: "https://official.example/",
+      employee_number: 12,
+      enrichment_status: "complete",
+      enrichment_result: proposal,
+      enrichment_checked_at: new Date().toISOString(),
+    });
+  const confirmation = {
+    action: "confirm_phone" as const,
+    id: candidateId,
+    expectedUpdatedAt: timestamp,
+    confirmed: true as const,
+  };
+
+  test.each(["research_phone", "confirm_phone"])(
+    "%s requires write authorization before looking up data",
+    async (action) => {
+      vi.mocked(requireOrganization).mockRejectedValue(
+        new AppError(403, "forbidden", "Forbidden"),
+      );
+      const response = await POST(
+        request(
+          action === "confirm_phone"
+            ? confirmation
+            : { action, id: candidateId },
+        ),
+        context,
+      );
+      expect(response.status).toBe(403);
+      expect(requireOrganization).toHaveBeenCalledWith(org, true);
+      expect(enrichOfficialWebsite).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each([
+    { ...confirmation, confirmed: false },
+    { ...confirmation, confirmed: undefined },
+    { ...confirmation, phone: "0399999999" },
+    { ...confirmation, expectedUpdatedAt: "invalid" },
+    { action: "research_phone", id: "invalid" },
+  ])(
+    "rejects missing confirmation and client-controlled fields %#",
+    async (input) => {
+      const response = await POST(request(input), context);
+      expect(response.status).toBe(422);
+      expect(requireOrganization).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each([
+    {
+      candidate: row({ phone: "0312345678" }),
+      crm: null,
+      outcome: "existing_phone",
+    },
+    {
+      candidate: row(),
+      crm: { id: secondId, name: "CRM", phone: "0355555555" },
+      outcome: "existing_phone",
+    },
+    { candidate: row(), crm: null, outcome: "missing_website" },
+    { candidate: researched(), crm: null, outcome: "cached" },
+    {
+      candidate: row({
+        ...researched(),
+        enrichment_status: "pending",
+        updated_at: new Date().toISOString(),
+      }),
+      crm: null,
+      outcome: "pending",
+    },
+  ])(
+    "avoids website requests and quota usage for $outcome %#",
+    async ({ candidate, crm, outcome }) => {
+      const db = database({ data: candidate }, { data: crm });
+      expect(
+        await researchCandidatePhone(db.db, org, candidateId),
+      ).toMatchObject({ outcome });
+      expect(db.rpc).not.toHaveBeenCalled();
+      expect(enrichOfficialWebsite).not.toHaveBeenCalled();
+      for (const query of db.queries)
+        expect(query.calls).toContainEqual({
+          method: "eq",
+          args: ["organization_id", org],
+        });
+    },
+  );
+
+  test("missing/other tenant candidate is rejected before quota and remote fetch", async () => {
+    const db = database({ data: null });
+    await expect(
+      researchCandidatePhone(db.db, org, candidateId),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(db.rpc).not.toHaveBeenCalled();
+    expect(enrichOfficialWebsite).not.toHaveBeenCalled();
+  });
+
+  test("hourly quota failure prevents remote access", async () => {
+    const db = database(
+      { data: row({ website_url: "https://official.example" }) },
+      { data: null },
+    );
+    db.rpc.mockResolvedValue({ data: false, error: null });
+    await expect(
+      researchCandidatePhone(db.db, org, candidateId),
+    ).rejects.toMatchObject({ status: 429 });
+    expect(enrichOfficialWebsite).not.toHaveBeenCalled();
+  });
+
+  test.each(["old", "stale_pending"])(
+    "%s result can be researched with version checks and persistent quota",
+    async (state) => {
+      const initial = row({
+        ...researched(),
+        enrichment_checked_at: "2000-01-01T00:00:00Z",
+        ...(state === "stale_pending"
+          ? {
+              enrichment_status: "pending" as const,
+              enrichment_checked_at: new Date().toISOString(),
+            }
+          : {}),
+      });
+      const pending = row({ ...initial, updated_at: "2026-10-05T03:00:00Z" });
+      const db = database(
+        { data: initial },
+        { data: null },
+        { data: pending },
+        { data: researched() },
+        { data: null },
+      );
+      vi.mocked(enrichOfficialWebsite).mockResolvedValue(proposal);
+      expect(
+        await researchCandidatePhone(db.db, org, candidateId),
+      ).toMatchObject({
+        outcome: "checked",
+        candidate: { phone: null, employee_number: 12 },
+      });
+      expect(db.rpc).toHaveBeenCalledWith("reserve_company_discovery_request", {
+        org,
+        operation: "enrich",
+      });
+      expect(enrichOfficialWebsite).toHaveBeenCalledTimes(1);
+      expect(db.queries[2].calls).toContainEqual({
+        method: "eq",
+        args: ["updated_at", initial.updated_at],
+      });
+      expect(db.queries[3].calls).toContainEqual({
+        method: "eq",
+        args: ["updated_at", pending.updated_at],
+      });
+      expect(
+        db.queries[3].calls.find((call) => call.method === "update")?.args[0],
+      ).not.toHaveProperty("phone");
+    },
+  );
+
+  test.each([
+    { phone: "0366666666" },
+    { enrichment_result: null },
+    { enrichment_result: { ...proposal, sourceUrl: null } },
+    { enrichment_result: { ...proposal, phone: "invalid" } },
+    { enrichment_status: "pending" as const },
+    { updated_at: "2026-10-05T04:00:00Z" },
+  ])(
+    "cannot confirm missing/replaced/already saved evidence %#",
+    async (override) => {
+      const db = database({ data: row({ ...researched(), ...override }) });
+      await expect(
+        confirmCandidatePhone(db.db, org, userId, confirmation),
+      ).rejects.toMatchObject({ status: 409 });
+      expect(db.queries).toHaveLength(1);
+      expect(enrichOfficialWebsite).not.toHaveBeenCalled();
+    },
+  );
+
+  test("explicit confirmation saves only server evidence phone, preserving employees and CRM", async () => {
+    const initial = researched();
+    const db = database(
+      { data: initial },
+      { data: initial },
+      { data: row({ ...initial, phone: proposal.phone }) },
+      { data: null },
+    );
+    authorize(db.db);
+    const response = await POST(request(confirmation), context);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      candidate: { phone: "0312345678", employee_number: 12 },
+    });
+    const write = db.queries[2].calls.find((call) => call.method === "update")
+      ?.args[0];
+    expect(write).toMatchObject({
+      phone: proposal.phone,
+      website_url: initial.website_url,
+      employee_number: 12,
+      provenance: { manual: { updatedBy: userId, evidence: proposal } },
+    });
+    expect(db.queries[2].calls).toContainEqual({
+      method: "eq",
+      args: ["updated_at", timestamp],
+    });
+    expect(
+      db.queries
+        .filter((q) => q.table === "companies")
+        .every((q) => !q.calls.some((call) => call.method === "update")),
+    ).toBe(true);
+    expect(enrichOfficialWebsite).not.toHaveBeenCalled();
+  });
+
+  test("an edit during confirmation returns conflict, without a false saved phone", async () => {
+    const db = database(
+      { data: researched() },
+      { data: researched() },
+      { data: null },
+    );
+    await expect(
+      confirmCandidatePhone(db.db, org, userId, confirmation),
+    ).rejects.toMatchObject({ status: 409 });
   });
 });

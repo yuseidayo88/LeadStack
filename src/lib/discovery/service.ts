@@ -21,6 +21,7 @@ import type {
   Candidate,
   DiscoveryListResponse,
   AcquireResponse,
+  PhoneResearchResponse,
 } from "./contracts";
 import type { DiscoveryInput, DiscoveryQuery } from "./schemas";
 
@@ -408,6 +409,15 @@ export async function getCandidateDetail(db: DB, org: string, id: string) {
 
 export async function enrichCandidate(db: DB, org: string, id: string) {
   const row = await getCandidate(db, org, id);
+  return enrichCandidateRow(db, org, row);
+}
+
+async function enrichCandidateRow(
+  db: DB,
+  org: string,
+  row: CompanyCandidateRow,
+) {
+  const id = row.id;
   if (!row.website_url)
     throw new AppError(
       422,
@@ -457,6 +467,75 @@ export async function enrichCandidate(db: DB, org: string, id: string) {
       "確認中に候補が更新されました。最新の内容で再実行してください。",
     );
   return { candidate: await linkedCandidate(db, org, saved.data) };
+}
+
+// Reuse existing evidence before spending a website request. These checks are
+// server-side so stale tables, retries and another browser cannot bypass them.
+export async function researchCandidatePhone(
+  db: DB,
+  org: string,
+  id: string,
+): Promise<PhoneResearchResponse> {
+  const row = await getCandidate(db, org, id);
+  const current = await linkedCandidate(db, org, row);
+  if (current.phone || current.crm_company_phone)
+    return { candidate: current, outcome: "existing_phone" };
+  if (!row.website_url)
+    return { candidate: current, outcome: "missing_website" };
+  // A crashed single-site request can be tried again after its execution bound.
+  if (
+    row.enrichment_status === "pending" &&
+    Date.now() - Date.parse(row.updated_at) < 60_000
+  )
+    return { candidate: current, outcome: "pending" };
+  if (
+    row.enrichment_status !== "pending" &&
+    row.enrichment_result &&
+    row.enrichment_checked_at &&
+    Date.now() - Date.parse(row.enrichment_checked_at) < 24 * 60 * 60 * 1000
+  )
+    return { candidate: current, outcome: "cached" };
+  return { ...(await enrichCandidateRow(db, org, row)), outcome: "checked" };
+}
+
+export async function confirmCandidatePhone(
+  db: DB,
+  org: string,
+  userId: string,
+  input: Extract<DiscoveryInput, { action: "confirm_phone" }>,
+) {
+  const row = await getCandidate(db, org, input.id);
+  if (row.updated_at !== input.expectedUpdatedAt)
+    throw new AppError(
+      409,
+      "candidate_changed",
+      "候補が更新されました。最新の内容を開き直してください。",
+    );
+  const proposal = object(row.enrichment_result);
+  if (
+    row.phone ||
+    row.enrichment_status !== "complete" ||
+    proposal.status !== "found" ||
+    typeof proposal.phone !== "string" ||
+    !/^0[1-9]\d{8,9}$/.test(proposal.phone) ||
+    typeof proposal.sourceUrl !== "string" ||
+    !/^https?:\/\//.test(proposal.sourceUrl)
+  )
+    throw new AppError(
+      409,
+      "phone_proposal_unavailable",
+      "保存できる電話番号候補がありません。企業詳細で最新の情報を確認してください。",
+    );
+  // Only the reviewed phone is changed. The client cannot replace the URL,
+  // employee count, evidence or an existing phone through this action.
+  return updateCandidate(db, org, userId, {
+    action: "update",
+    id: input.id,
+    expectedUpdatedAt: input.expectedUpdatedAt,
+    phone: proposal.phone,
+    website_url: row.website_url,
+    employee_number: row.employee_number,
+  });
 }
 
 export async function updateCandidate(

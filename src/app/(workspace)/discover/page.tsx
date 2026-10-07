@@ -9,6 +9,7 @@ import {
   Download,
   ExternalLink,
   RefreshCw,
+  Phone,
   Search,
   X,
 } from "lucide-react";
@@ -33,6 +34,8 @@ import {
 import { SearchableSelect } from "@/components/crm/searchable-select";
 import { ActivityDialog } from "@/components/crm/activity";
 import { CandidateDialog } from "@/components/discovery/candidate-dialog";
+import { PhoneResearchDialog } from "@/components/discovery/phone-research-dialog";
+import { PHONE_RESEARCH_BATCH_LIMIT } from "@/lib/discovery/phone-research";
 import { TargetingFilters } from "@/components/discovery/targeting-filters";
 import { DiscoveryScanPanel } from "@/components/discovery/scan-panel";
 import { useDiscoveryScan } from "@/components/discovery/use-discovery-scan";
@@ -124,6 +127,7 @@ function OrganizationDiscovery() {
   >({});
   const [focused, setFocused] = useState<Candidate | null>(null);
   const [importIds, setImportIds] = useState<string[] | null>(null);
+  const [phoneResearch, setPhoneResearch] = useState<Candidate[] | null>(null);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [removeError, setRemoveError] = useState("");
@@ -501,9 +505,29 @@ function OrganizationDiscovery() {
             再読み込み
           </Button>
         </div>
-        <p className="border-b bg-slate-50/50 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
-          表示件数は取得済み候補の件数です。全国の企業や検索条件に合う企業の全件数ではありません。電話番号はGビズインフォには含まれず、公式サイトでの確認または手動入力が必要です。
-        </p>
+        <div className="space-y-2 border-b bg-slate-50/50 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+          <p>
+            表示件数は取得済み候補の件数です。全国の企業や検索条件に合う企業の全件数ではありません。
+          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p>
+              架電リストの作成：候補を選択 →「電話番号を調べる」→
+              出典を確認して保存 →
+              営業リストへ取込。Gビズインフォの電話番号はないため、公式サイトから補完します。
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => changeFilters({ hasPhone: !filters.hasPhone })}
+              aria-pressed={filters.hasPhone}
+            >
+              <Phone />
+              {filters.hasPhone
+                ? "電話番号の絞込みを解除"
+                : "電話番号ありを表示"}
+            </Button>
+          </div>
+        </div>
         {selected.length > 0 && canWrite && (
           <div className="flex flex-wrap items-center gap-3 border-b bg-teal-50 p-3 text-teal-900">
             <span className="text-sm font-medium">
@@ -512,6 +536,31 @@ function OrganizationDiscovery() {
             <Button size="sm" onClick={() => setImportIds([...selected])}>
               <Download />
               営業リストに取り込む
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={scan.running || scan.blocked}
+              onClick={() => {
+                const records = {
+                  ...selectionRecords,
+                  ...Object.fromEntries(
+                    (data?.data ?? []).map((row) => [row.id, row]),
+                  ),
+                };
+                setPhoneResearch(
+                  selected
+                    .slice(0, PHONE_RESEARCH_BATCH_LIMIT)
+                    .map((id) => records[id])
+                    .filter((row): row is Candidate => !!row),
+                );
+              }}
+            >
+              <Phone />
+              電話番号を調べる
+              {selected.length > PHONE_RESEARCH_BATCH_LIMIT
+                ? "（先頭10社）"
+                : ""}
             </Button>
             <Button
               variant="outline"
@@ -688,6 +737,14 @@ function OrganizationDiscovery() {
                     </td>
                     <td className="text-xs">
                       <PhoneLink value={candidate.phone} />
+                      {!candidate.phone && candidate.enrichment_checked_at && (
+                        <button
+                          className="mt-1 block text-xs text-primary hover:underline"
+                          onClick={() => setFocused(candidate)}
+                        >
+                          サイトの調査結果
+                        </button>
+                      )}
                     </td>
                     <td className="text-xs">
                       <WebsiteLink value={candidate.website_url} />
@@ -774,6 +831,48 @@ function OrganizationDiscovery() {
           onUpdated={async (candidate) => {
             setFocused(candidate);
             await rows.mutate();
+          }}
+        />
+      )}
+      {phoneResearch && (
+        <PhoneResearchDialog
+          base={base}
+          candidates={phoneResearch}
+          onClose={() => {
+            setPhoneResearch(null);
+            void rows.mutate();
+          }}
+          onUpdated={(candidate) => {
+            setSelectionRecords((current) => ({
+              ...current,
+              [candidate.id]: candidate,
+            }));
+            void rows.mutate(
+              (current) =>
+                current
+                  ? {
+                      ...current,
+                      data: current.data.map((row) =>
+                        row.id === candidate.id ? candidate : row,
+                      ),
+                    }
+                  : current,
+              { revalidate: false },
+            );
+          }}
+          onDetail={(candidate) => {
+            setPhoneResearch(null);
+            setFocused({ ...candidate, list_summary: true });
+            void rows.mutate();
+          }}
+          onImport={(candidates) => {
+            setPhoneResearch(null);
+            setSelectionRecords((current) => ({
+              ...current,
+              ...Object.fromEntries(candidates.map((row) => [row.id, row])),
+            }));
+            setImportIds(candidates.map((row) => row.id));
+            void rows.mutate();
           }}
         />
       )}
