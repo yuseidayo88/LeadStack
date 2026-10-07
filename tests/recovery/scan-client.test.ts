@@ -141,6 +141,16 @@ describe("scan criteria from visible filters", () => {
 });
 
 describe("scan event validation", () => {
+  test("accepts legacy events and validates optional reused counts", () => {
+    expect(parseScanEvent(event())).not.toBeNull();
+    expect(
+      parseScanEvent(event({ scanned: 3, saved: 1, reused: 2 })),
+    ).not.toBeNull();
+    for (const reused of [-1, 0.5, Number.NaN, 201, 2])
+      expect(
+        parseScanEvent(event({ scanned: 2, saved: 1, reused })),
+      ).toBeNull();
+  });
   test.each(["progress", "complete", "paused", "error"] as const)(
     "accepts a valid %s event",
     (type) => {

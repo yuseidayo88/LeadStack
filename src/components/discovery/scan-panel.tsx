@@ -16,6 +16,8 @@ type Props = {
   disabled: boolean;
   resultsUpdating: boolean;
   resultsError: boolean;
+  refreshDetails: boolean;
+  onRefreshDetailsChange: (value: boolean) => void;
   onStart: (resume: boolean) => void;
 };
 
@@ -28,6 +30,8 @@ export function DiscoveryScanPanel({
   disabled,
   resultsUpdating,
   resultsError,
+  refreshDetails,
+  onRefreshDetailsChange,
   onStart,
 }: Props) {
   const canStart =
@@ -116,6 +120,22 @@ export function DiscoveryScanPanel({
           都道府県・業種・従業員数・業務キーワード・企業名のいずれかを指定してください。
         </p>
       )}
+      {canWrite && (
+        <div className="space-y-1 text-xs text-muted-foreground">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={refreshDetails}
+              disabled={scan.running || scan.blocked}
+              onChange={(event) => onRefreshDetailsChange(event.target.checked)}
+            />
+            取得済みの企業情報も更新する（時間がかかります）
+          </label>
+          <p>
+            通常は24時間以内に取得した企業の詳細を再利用して、待ち時間を減らします。
+          </p>
+        </div>
+      )}
       {configured === false && (
         <p role="status" className="text-xs">
           外部データの接続設定が必要です。取得済み候補は検索できます。新しく探すには管理者に接続設定を依頼してください。
@@ -166,6 +186,12 @@ export function DiscoveryScanPanel({
             確認 {event?.scanned ?? 0} / 200 社 · 条件一致 {event?.matched ?? 0}{" "}
             / {event?.target ?? 20} 社
           </p>
+          {!!event?.reused && (
+            <p className="text-muted-foreground">
+              保存済み情報を再利用 {event.reused}社 · 新規取得・更新{" "}
+              {event.saved}社
+            </p>
+          )}
           <ProgressClock
             startedAt={scan.startedAt}
             running={

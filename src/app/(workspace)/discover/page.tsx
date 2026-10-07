@@ -131,6 +131,7 @@ function OrganizationDiscovery() {
   const [removeOpen, setRemoveOpen] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [removeError, setRemoveError] = useState("");
+  const [refreshDetails, setRefreshDetails] = useState(false);
   const inFlight = useRef(false);
   const rows = useSWR<DiscoveryListResponse, ApiError>(
     queryFilterError || filtersSettling
@@ -166,7 +167,10 @@ function OrganizationDiscovery() {
       dedupingInterval: 2000,
     },
   );
-  const criteria = scanCriteriaFromFilters(filters);
+  const criteria = {
+    ...scanCriteriaFromFilters(filters),
+    ...(refreshDetails ? { refreshDetails: true } : {}),
+  };
   const scan = useDiscoveryScan({
     base,
     actorId: profile.id,
@@ -206,7 +210,8 @@ function OrganizationDiscovery() {
     if (change.hasEmployees) next.includeUnknownEmployees = false;
     else if (change.includeUnknownEmployees) next.hasEmployees = false;
     if (
-      JSON.stringify(scanCriteriaFromFilters(next)) !== JSON.stringify(criteria)
+      JSON.stringify(scanCriteriaFromFilters(next)) !==
+      JSON.stringify(scanCriteriaFromFilters(filters))
     )
       scan.cancel();
     setFilters(next);
@@ -437,6 +442,11 @@ function OrganizationDiscovery() {
           disabled={!!filterError || filtersSettling || removing}
           resultsUpdating={rows.isValidating}
           resultsError={!!rows.error}
+          refreshDetails={refreshDetails}
+          onRefreshDetailsChange={(value) => {
+            void scan.cancel();
+            setRefreshDetails(value);
+          }}
           onStart={startScan}
         />
         {preset && (

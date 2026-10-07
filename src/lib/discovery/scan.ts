@@ -15,6 +15,7 @@ import {
 import type { ScanCriteria, ScanEvent } from "./contracts";
 import { openScanCursor, signScanCursor } from "./scan-cursor";
 import { reserveRequest } from "./service";
+import { reusableGbizDetail } from "./detail-cache";
 import {
   authorizeScanStep,
   commitScanCandidate,
@@ -202,6 +203,7 @@ export async function startCompanyScan(
           matched: cursor.matchedIds.length,
           target: cursor.target,
           saved: cursor.saved,
+          reused: cursor.reused,
           detailsFailed: cursor.detailsFailed,
           unknownEmployees: cursor.unknownEmployees,
           unknownIndustry: cursor.unknownIndustry,
@@ -320,6 +322,28 @@ export async function startCompanyScan(
           }
           const number = cursor.numbers[cursor.offset];
           if (cursor.seen.includes(number)) {
+            advance(number);
+            emit("progress");
+            continue;
+          }
+          if (signal.aborted) throw new ScanRunStopped("cancelled");
+          const cached = current.get(number);
+          if (
+            !input.criteria.refreshDetails &&
+            cached?.organization_id === organization &&
+            reusableGbizDetail(cached, Date.now())
+          ) {
+            // Read-only: no detail request/permit, commit, or freshness update.
+            // Existing durable guards still gate every external call and write;
+            // the client drops events from a cancelled/superseded generation.
+            cursor.reused++;
+            if (cached.employee_number === null) cursor.unknownEmployees++;
+            if (!cached.industry_codes.length) cursor.unknownIndustry++;
+            if (
+              candidateMatchesScan(cached, input.criteria) &&
+              !cursor.matchedIds.includes(cached.id)
+            )
+              cursor.matchedIds.push(cached.id);
             advance(number);
             emit("progress");
             continue;

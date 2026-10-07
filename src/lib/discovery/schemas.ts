@@ -24,6 +24,8 @@ const businessKeywords = z
   .pipe(z.array(z.string().min(1).max(40)).max(8));
 export const scanCriteria = z
   .strictObject({
+    // Optional to keep old signed criteria/checkpoints valid when not enabled.
+    refreshDetails: z.boolean().optional(),
     prefecture: z.preprocess(blankOptional, prefecture.optional()),
     name: z.preprocess(
       blankOptional,

@@ -15,6 +15,7 @@ const cursorSchema = z.strictObject({
   lastPage: z.boolean(),
   scanned: z.number().int().min(0).max(200),
   saved: z.number().int().min(0).max(200),
+  reused: z.number().int().min(0).max(200).default(0),
   detailsFailed: z.number().int().min(0).max(1000),
   unknownEmployees: z.number().int().min(0).max(200),
   unknownIndustry: z.number().int().min(0).max(200),
@@ -71,6 +72,7 @@ export function openScanCursor(
       lastPage: false,
       scanned: 0,
       saved: 0,
+      reused: 0,
       detailsFailed: 0,
       unknownEmployees: 0,
       unknownIndustry: 0,
@@ -102,6 +104,7 @@ export function openScanCursor(
       cursor.offset > cursor.numbers.length ||
       cursor.matchedIds.length > cursor.scanned ||
       cursor.saved > cursor.scanned ||
+      cursor.saved + cursor.reused > cursor.scanned ||
       cursor.target % 20 !== 0 ||
       new Set(cursor.matchedIds).size !== cursor.matchedIds.length
     )

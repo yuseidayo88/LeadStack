@@ -107,6 +107,44 @@ afterEach(() => {
 });
 
 describe("scan cursor authentication and continuation", () => {
+  test("refresh mode is bound to the signature and cannot change on resume", () => {
+    const ordinary = openScanCursor(org, criteria(), undefined, now);
+    expectError(() =>
+      openScanCursor(
+        org,
+        criteria({ refreshDetails: true }),
+        signScanCursor(ordinary),
+        now,
+      ),
+    );
+    const fresh = openScanCursor(
+      org,
+      criteria({ refreshDetails: true }),
+      undefined,
+      now,
+    );
+    expectError(() =>
+      openScanCursor(org, criteria(), signScanCursor(fresh), now),
+    );
+  });
+
+  test("accepts a pre-cache cursor and rejects reuse counts beyond scanned work", () => {
+    const cursor = openScanCursor(org, criteria(), undefined, now);
+    const legacy = { ...cursor } as Partial<ScanCursor>;
+    delete legacy.reused;
+    expect(
+      openScanCursor(org, criteria(), signScanCursor(legacy as ScanCursor), now)
+        .reused,
+    ).toBe(0);
+    expectError(() =>
+      openScanCursor(
+        org,
+        criteria(),
+        signScanCursor({ ...cursor, scanned: 1, saved: 1, reused: 1 }),
+        now,
+      ),
+    );
+  });
   test("starts at page one with a two-hour lifetime and a 20-match target", () => {
     const cursor = openScanCursor(org, criteria(), undefined, now);
     expect(cursor).toMatchObject({

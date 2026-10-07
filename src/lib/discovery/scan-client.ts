@@ -161,6 +161,13 @@ export function parseScanEvent(value: unknown): ScanEvent | null {
       return null;
   }
   if (
+    event.reused !== undefined &&
+    (!Number.isSafeInteger(event.reused) ||
+      event.reused < 0 ||
+      event.reused + event.saved > event.scanned)
+  )
+    return null;
+  if (
     !Array.isArray(event.matchedIds) ||
     event.matchedIds.length > 200 ||
     event.matchedIds.some(

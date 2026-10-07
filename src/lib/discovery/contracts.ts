@@ -67,6 +67,7 @@ export type PhoneResearchResponse = {
 };
 
 export type ScanCriteria = {
+  refreshDetails?: boolean;
   prefecture?: string;
   name?: string;
   corporateNumber?: string;
@@ -87,6 +88,7 @@ export type ScanEvent = {
   matched: number;
   target: number;
   saved: number;
+  reused?: number;
   detailsFailed: number;
   unknownEmployees: number;
   unknownIndustry: number;

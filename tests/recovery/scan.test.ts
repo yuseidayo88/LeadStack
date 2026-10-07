@@ -41,6 +41,7 @@ function startCompanyScan(
   );
 }
 import { AppError } from "@/lib/errors";
+import { candidateFromGbiz } from "@/lib/discovery/mapping";
 
 const org = "11111111-1111-4111-8111-111111111111";
 const otherOrg = "22222222-2222-4222-8222-222222222222";
@@ -308,6 +309,28 @@ async function events(response: Response): Promise<ScanEvent[]> {
 }
 const last = (values: ScanEvent[]) => values.at(-1)!;
 
+function cachedRow(
+  index: number,
+  overrides: Partial<CompanyCandidateRow> = {},
+): CompanyCandidateRow {
+  const provider = company(index);
+  provider.provenance.requestUrl += `/${provider.corporateNumber}?metadata_flg=true`;
+  return {
+    ...candidateFromGbiz(provider),
+    id: id(index + 100),
+    organization_id: org,
+    phone: null,
+    company_id: null,
+    created_at: timestamp,
+    updated_at: timestamp,
+    enrichment_status: null,
+    enrichment_error: null,
+    enrichment_checked_at: null,
+    enrichment_result: null,
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   vi.resetAllMocks();
   vi.useFakeTimers();
@@ -318,6 +341,241 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
+});
+
+describe("recent detail reuse", () => {
+  test("checks twenty recent candidates in one chunk without spending five-detail budget or rewriting timestamps", async () => {
+    upstream(Array.from({ length: 20 }, (_, i) => company(i + 1)));
+    const { db, rows, calls, job } = database();
+    job.detailLimit = 5;
+    for (let i = 1; i <= 20; i++) rows.set(number(i), cachedRow(i));
+    const before = structuredClone([...rows.values()]);
+    const result = last(
+      await events(
+        await startCompanyScan(db, org, {
+          criteria: scanCriteria.parse({ prefecture: "13" }),
+        }),
+      ),
+    );
+    expect(result).toMatchObject({
+      type: "complete",
+      reason: "target",
+      scanned: 20,
+      matched: 20,
+      saved: 0,
+      reused: 20,
+    });
+    expect(getGbizCompany).not.toHaveBeenCalled();
+    expect(job.details).toBe(0);
+    expect(job.searches).toBe(1);
+    expect(calls.filter((call) => call.method !== "select")).toEqual([]);
+    expect([...rows.values()]).toEqual(before);
+    expect(
+      calls.every(
+        (call) =>
+          (call.value as { organization_id: string }).organization_id === org,
+      ),
+    ).toBe(true);
+  });
+
+  test("mixes eighteen cache hits with two new details while retaining reviewed phone and employees", async () => {
+    upstream(Array.from({ length: 20 }, (_, i) => company(i + 1)));
+    const { db, rows, job } = database();
+    job.detailLimit = 5;
+    for (let i = 1; i <= 18; i++) rows.set(number(i), cachedRow(i));
+    rows.set(
+      number(1),
+      cachedRow(1, {
+        phone: "0312345678",
+        employee_number: 49,
+        website_url: "https://reviewed.example/",
+      }),
+    );
+    const result = last(
+      await events(
+        await startCompanyScan(db, org, {
+          criteria: scanCriteria.parse({ prefecture: "13", employeeMax: 50 }),
+        }),
+      ),
+    );
+    expect(result).toMatchObject({
+      scanned: 20,
+      matched: 20,
+      saved: 2,
+      reused: 18,
+    });
+    expect(vi.mocked(getGbizCompany).mock.calls.map(([n]) => n)).toEqual([
+      number(19),
+      number(20),
+    ]);
+    expect(job.details).toBe(2);
+    expect(rows.get(number(1))).toMatchObject({
+      phone: "0312345678",
+      employee_number: 49,
+      website_url: "https://reviewed.example/",
+      fetched_at: timestamp,
+    });
+  });
+
+  test("explicit refresh still observes the five-detail budget", async () => {
+    upstream(Array.from({ length: 20 }, (_, i) => company(i + 1)));
+    const { db, rows, job } = database();
+    job.detailLimit = 5;
+    for (let i = 1; i <= 20; i++) rows.set(number(i), cachedRow(i));
+    const result = last(
+      await events(
+        await startCompanyScan(db, org, {
+          criteria: scanCriteria.parse({
+            prefecture: "13",
+            refreshDetails: true,
+          }),
+        }),
+      ),
+    );
+    expect(result).toMatchObject({
+      type: "paused",
+      reason: "chunk_limit",
+      scanned: 5,
+      saved: 5,
+      reused: 0,
+    });
+    expect(getGbizCompany).toHaveBeenCalledTimes(5);
+  });
+
+  test.each([
+    "expired",
+    "future",
+    "missing_source",
+    "search_summary",
+    "wrong_number",
+    "mismatched_time",
+    "other_org",
+  ])("does not reuse %s data", async (kind) => {
+    upstream([company(1)]);
+    const { db, rows } = database();
+    const row = cachedRow(1);
+    const provenance = row.provenance as {
+      gbiz: { source: string; retrievedAt: string; requestUrl: string };
+    };
+    if (kind === "expired" || kind === "future") {
+      const offset = kind === "expired" ? -24 * 60 * 60 * 1000 : 1;
+      row.fetched_at = provenance.gbiz.retrievedAt = new Date(
+        Date.now() + offset,
+      ).toISOString();
+    }
+    if (kind === "missing_source") row.provenance = {};
+    if (kind === "search_summary")
+      provenance.gbiz.requestUrl = "https://api.info.gbiz.go.jp/hojin/v2/hojin";
+    if (kind === "wrong_number")
+      provenance.gbiz.requestUrl = `https://api.info.gbiz.go.jp/hojin/v2/hojin/${number(2)}`;
+    if (kind === "mismatched_time")
+      provenance.gbiz.retrievedAt = new Date(Date.now() - 1000).toISOString();
+    if (kind === "other_org") row.organization_id = otherOrg;
+    rows.set(number(1), row);
+    const result = last(
+      await events(
+        await startCompanyScan(db, org, {
+          criteria: scanCriteria.parse({ prefecture: "13" }),
+        }),
+      ),
+    );
+    expect(getGbizCompany).toHaveBeenCalledTimes(1);
+    expect(result.reused).toBe(0);
+  });
+
+  test("rechecks changed filters against cached fields, retaining null versus zero", async () => {
+    upstream([company(1), company(2), company(3)]);
+    const { db, rows } = database();
+    rows.set(number(1), cachedRow(1, { employee_number: 0 }));
+    rows.set(
+      number(2),
+      cachedRow(2, { employee_number: null, industry_codes: [] }),
+    );
+    rows.set(number(3), cachedRow(3, { employee_number: 50 }));
+    const result = last(
+      await events(
+        await startCompanyScan(db, org, {
+          criteria: scanCriteria.parse({
+            prefecture: "13",
+            employeeMin: 10,
+            employeeMax: 50,
+            includeUnknownEmployees: false,
+          }),
+        }),
+      ),
+    );
+    expect(result).toMatchObject({
+      scanned: 3,
+      reused: 3,
+      saved: 0,
+      matched: 1,
+      unknownEmployees: 1,
+      unknownIndustry: 1,
+    });
+    expect(result.matchedIds).toEqual([id(103)]);
+    expect(getGbizCompany).not.toHaveBeenCalled();
+  });
+
+  test("duplicate positions do not inflate reused count; resume retains the total and pending tail", async () => {
+    upstream([
+      company(1),
+      company(1),
+      ...Array.from({ length: 24 }, (_, i) => company(i + 2)),
+    ]);
+    const { db, rows } = database();
+    for (let i = 1; i <= 25; i++) rows.set(number(i), cachedRow(i));
+    const criteria = scanCriteria.parse({ prefecture: "13" });
+    const first = last(
+      await events(await startCompanyScan(db, org, { criteria })),
+    );
+    expect(first).toMatchObject({
+      reason: "target",
+      matched: 20,
+      scanned: 21,
+      reused: 20,
+      saved: 0,
+    });
+    const final = last(
+      await events(
+        await startCompanyScan(db, org, {
+          criteria,
+          resumeToken: first.resumeToken!,
+        }),
+      ),
+    );
+    expect(final).toMatchObject({
+      reason: "exhausted",
+      matched: 25,
+      scanned: 26,
+      reused: 25,
+      saved: 0,
+    });
+    expect(getGbizCompany).not.toHaveBeenCalled();
+  });
+
+  test("a cache hit does not allow a following uncached write after durable cancellation", async () => {
+    upstream([company(1), company(2)]);
+    const { db, rows, job } = database();
+    rows.set(number(1), cachedRow(1));
+    vi.mocked(searchGbizCompanies).mockImplementation(async () => {
+      job.status = "cancelled";
+      return { companies: [company(1), company(2)], page: 1, limit: 20 };
+    });
+    const result = last(
+      await events(
+        await startCompanyScan(db, org, {
+          criteria: scanCriteria.parse({ prefecture: "13" }),
+        }),
+      ),
+    );
+    expect(result).toMatchObject({
+      type: "paused",
+      reason: "cancelled",
+      saved: 0,
+    });
+    expect(getGbizCompany).not.toHaveBeenCalled();
+    expect(rows.size).toBe(1);
+  });
 });
 
 describe("streaming company discovery", () => {
