@@ -22,6 +22,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { fetchedLabel, WebsiteLink } from "./display";
+import { ProgressClock, WorkProgress } from "./work-progress";
 
 type Props = {
   base: string;
@@ -49,6 +50,7 @@ export function PhoneResearchDialog({
   const [saving, setSaving] = useState<string | null>(null);
   const [saveErrors, setSaveErrors] = useState<Record<string, string>>({});
   const [elapsed, setElapsed] = useState(0);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
   const mounted = useRef(true);
   const stop = useRef(false);
   const inFlight = useRef(false);
@@ -72,6 +74,8 @@ export function PhoneResearchDialog({
     inFlight.current = true;
     stop.current = false;
     setPhase("running");
+    setStartedAt(Date.now());
+    setElapsed(0);
     setVerified({});
     setSaveErrors({});
     setItems({});
@@ -218,6 +222,17 @@ export function PhoneResearchDialog({
             )}
             {status}
           </p>
+          {phase !== "idle" && (
+            <>
+              <WorkProgress
+                label="電話番号調査の進捗"
+                value={completed.length}
+                total={candidates.length}
+                description={`${completed.length} / ${candidates.length}社 · 残り${Math.max(0, candidates.length - completed.length)}社`}
+              />
+              <ProgressClock startedAt={startedAt} running={busy} />
+            </>
+          )}
           {phase !== "idle" && (
             <p className="text-xs text-muted-foreground">
               新規サイト調査 {checked}社 · 結果の再利用 {cached}社 · 電話候補{" "}

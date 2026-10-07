@@ -49,7 +49,7 @@ export function useDiscoveryScan({
   base: string;
   actorId: string;
   criteria: ScanCriteria;
-  onSaved: () => void;
+  onSaved: () => void | Promise<unknown>;
 }) {
   const storageKey = `leadstack.discovery.scan.v1.${base}`;
   const activeStorageKey = activeScanStorageKey(base);
@@ -63,6 +63,11 @@ export function useDiscoveryScan({
   });
   const [ready, setReady] = useState(false);
   const [running, setRunning] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  const [requestPending, setRequestPending] = useState(false);
+  const [started, setStarted] = useState<{ scope: string; at: number } | null>(
+    null,
+  );
   const [waitingUntil, setWaitingUntil] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [cancellation, setCancellation] = useState<
@@ -129,6 +134,7 @@ export function useDiscoveryScan({
     controller?.abort();
     if (mountedBase.current !== null) {
       setRunning(false);
+      setFinishing(false);
       setWaitingUntil(null);
       if (!run) setCancellation("idle");
     }
@@ -147,6 +153,8 @@ export function useDiscoveryScan({
       if (mountGeneration.current !== mount) return;
       setReady(false);
       setRunning(false);
+      setFinishing(false);
+      setStarted(null);
       setWaitingUntil(null);
       setCancellation("idle");
       try {
@@ -224,6 +232,9 @@ export function useDiscoveryScan({
     let lastRefresh = 0;
     let lastSaved = previous?.saved ?? 0;
     setRunning(true);
+    setFinishing(false);
+    setStarted({ scope, at: Date.now() });
+    setRequestPending(true);
     setError("");
     if (!resume) {
       setCheckpoint(null);
@@ -242,6 +253,7 @@ export function useDiscoveryScan({
         }
         if (!valid()) return;
         setWaitingUntil(null);
+        setRequestPending(true);
         const chunk: ActiveScanRun = {
           version: 1,
           base,
@@ -268,6 +280,7 @@ export function useDiscoveryScan({
         });
         const terminal = await readScanEvents(response, (event) => {
           if (!valid()) return;
+          setRequestPending(false);
           const next: ScanCheckpoint = {
             version: 1,
             base,
@@ -313,10 +326,22 @@ export function useDiscoveryScan({
       }
     } finally {
       if (valid()) {
-        active.current = null;
+        setFinishing(true);
         setRunning(false);
         setWaitingUntil(null);
-        onSavedRef.current();
+        try {
+          await onSavedRef.current();
+        } catch {
+          if (valid())
+            setError(
+              "検索結果の一覧を更新できませんでした。再読み込みしてください。",
+            );
+        } finally {
+          if (valid()) {
+            active.current = null;
+            setFinishing(false);
+          }
+        }
       }
       controller.abort();
     }
@@ -330,10 +355,13 @@ export function useDiscoveryScan({
   return {
     event: current?.event ?? null,
     running,
+    finishing,
+    requestPending,
+    startedAt: started?.scope === scope ? started.at : null,
     waitingUntil,
     error,
     cancellation,
-    blocked: !ready || cancellation !== "idle",
+    blocked: !ready || finishing || cancellation !== "idle",
     start,
     stop,
     cancel,

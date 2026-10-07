@@ -275,6 +275,12 @@ try {
     });
   await expect(dialog.getByRole("status")).toContainText("電話番号を調査中");
   await expect(
+    dialog.getByRole("progressbar", { name: "電話番号調査の進捗" }),
+  ).toHaveAttribute("aria-valuenow", "0");
+  await expect(
+    dialog.getByRole("progressbar", { name: "電話番号調査の進捗" }),
+  ).toHaveAttribute("aria-valuemax", "6");
+  await expect(
     dialog.getByLabel("電話番号の調査結果", { exact: true }),
   ).toHaveAttribute("aria-busy", "true");
   await expect(
@@ -282,6 +288,12 @@ try {
   ).toBeEnabled();
   await page.screenshot({ path: output + "/research-running.png" });
   await expect(dialog.getByRole("status")).toHaveText("調査が完了しました。");
+  await expect(
+    dialog.getByRole("progressbar", { name: "電話番号調査の進捗" }),
+  ).toHaveAttribute("aria-valuenow", "6");
+  await expect(
+    dialog.getByText("6 / 6社 · 残り0社", { exact: true }),
+  ).toBeVisible();
   assert.equal(
     researchPosts.length,
     6,
@@ -473,6 +485,22 @@ try {
     dialog.getByRole("button", { name: "停止中…", exact: true }),
   ).toBeDisabled();
   await expect(dialog.getByRole("status")).toContainText("調査を停止しました");
+  const stoppedProgress = dialog.getByRole("progressbar", {
+    name: "電話番号調査の進捗",
+  });
+  await expect(stoppedProgress).toHaveAttribute("aria-valuenow", "1");
+  await expect(stoppedProgress).toHaveAttribute("aria-valuemax", "2");
+  await expect(
+    dialog.getByText("1 / 2社 · 残り1社", { exact: true }),
+  ).toBeVisible();
+  assert.ok(
+    await stoppedProgress
+      .locator("div")
+      .evaluate(
+        (el) => parseFloat(getComputedStyle(el).transitionDuration) <= 0.01,
+      ),
+    "Reduced motion removes visible bar transition",
+  );
   assert.equal(researchPosts.length - beforeStop, 1);
   assert.equal((await detail("slow")).enrichment_result.phone, "0312345678");
   assert.equal((await detail("later")).enrichment_result, null);

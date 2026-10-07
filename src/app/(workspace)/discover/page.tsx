@@ -171,9 +171,13 @@ function OrganizationDiscovery() {
     base,
     actorId: profile.id,
     criteria,
-    onSaved: () => {
-      void rows.mutate();
-    },
+    // Keep the scan's finishing state until the resulting list has settled.
+    // SWR exposes failures through rows.error; avoid unhandled refresh promises.
+    onSaved: () =>
+      rows.mutate().then(
+        () => undefined,
+        () => undefined,
+      ),
   });
   const data = rows.data;
   const hasFilters =
@@ -431,6 +435,8 @@ function OrganizationDiscovery() {
           hasCriteria={hasScanCriteria(criteria)}
           requiresPhone={filters.hasPhone}
           disabled={!!filterError || filtersSettling || removing}
+          resultsUpdating={rows.isValidating}
+          resultsError={!!rows.error}
           onStart={startScan}
         />
         {preset && (
@@ -478,6 +484,13 @@ function OrganizationDiscovery() {
         id="candidate-list"
         className="surface scroll-mt-4 overflow-hidden"
         aria-labelledby="candidate-list-title"
+        aria-busy={
+          scan.running ||
+          scan.finishing ||
+          scan.cancellation === "pending" ||
+          rows.isValidating ||
+          filtersSettling
+        }
       >
         <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
           <div>
@@ -586,7 +599,12 @@ function OrganizationDiscovery() {
           <Loading label="検索条件を反映中" />
         ) : rows.error ? (
           <ErrorState error={rows.error} retry={() => void rows.mutate()} />
-        ) : !data ? (
+        ) : !data ||
+          (!data.data.length &&
+            (scan.running ||
+              scan.finishing ||
+              scan.cancellation === "pending" ||
+              rows.isValidating)) ? (
           <Loading label="企業の候補を読み込み中" />
         ) : data.data.length ? (
           <div className="overflow-x-auto">

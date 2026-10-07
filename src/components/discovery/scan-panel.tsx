@@ -4,6 +4,8 @@ import { Search, Square, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Busy } from "@/components/crm/common";
 import type { useDiscoveryScan } from "@/components/discovery/use-discovery-scan";
+import { scanProgressState } from "@/lib/discovery/progress";
+import { ProgressClock, WorkProgress } from "./work-progress";
 
 type Props = {
   scan: ReturnType<typeof useDiscoveryScan>;
@@ -12,6 +14,8 @@ type Props = {
   hasCriteria: boolean;
   requiresPhone: boolean;
   disabled: boolean;
+  resultsUpdating: boolean;
+  resultsError: boolean;
   onStart: (resume: boolean) => void;
 };
 
@@ -22,6 +26,8 @@ export function DiscoveryScanPanel({
   hasCriteria,
   requiresPhone,
   disabled,
+  resultsUpdating,
+  resultsError,
   onStart,
 }: Props) {
   const canStart =
@@ -32,6 +38,19 @@ export function DiscoveryScanPanel({
     !scan.running &&
     !scan.blocked;
   const event = scan.event;
+  const progress = scanProgressState({
+    ...scan,
+    resultsUpdating,
+    resultsError,
+  });
+  const progressVisible =
+    !!event ||
+    scan.running ||
+    scan.finishing ||
+    scan.startedAt !== null ||
+    scan.cancellation !== "idle";
+  const goalPending =
+    scan.running && scan.requestPending && event?.reason === "target";
   return (
     <div
       id="discovery-search-progress"
@@ -50,7 +69,11 @@ export function DiscoveryScanPanel({
             <Button onClick={() => onStart(false)} disabled={!canStart}>
               <Busy busy={scan.running}>
                 <Search />
-                条件に合う企業を探す
+                {scan.running
+                  ? "検索中…"
+                  : scan.finishing
+                    ? "結果を反映中…"
+                    : "条件に合う企業を探す"}
               </Busy>
             </Button>
             {scan.cancellation !== "idle" ? (
@@ -103,12 +126,62 @@ export function DiscoveryScanPanel({
           閲覧権限では取得済み候補を検索できます。外部検索・取込は営業メンバーまたは管理者に依頼してください。
         </p>
       )}
-      {(event || scan.running || scan.cancellation !== "idle") && (
-        <div role="status" className="space-y-1 border-t pt-2 text-xs">
-          <p className="font-medium">
+      {progressVisible && (
+        <div className="space-y-3 border-t pt-3 text-xs">
+          <p
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            className="font-medium"
+          >
+            {progress.label}
+          </p>
+          {progress.indeterminate && (
+            <WorkProgress
+              label="現在の処理"
+              value={null}
+              total={1}
+              description={progress.label}
+            />
+          )}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <WorkProgress
+              label="企業情報の確認数"
+              value={event?.scanned ?? 0}
+              total={200}
+              description={`${event?.scanned ?? 0} / 上限200社`}
+            />
+            <WorkProgress
+              label="条件に合う企業"
+              value={goalPending ? null : (event?.matched ?? 0)}
+              total={event?.target || 20}
+              description={
+                goalPending
+                  ? `${event?.matched ?? 0}社（次の目標を確認中）`
+                  : `${event?.matched ?? 0} / 目標${event?.target || 20}社`
+              }
+            />
+          </div>
+          <p className="sr-only">
             確認 {event?.scanned ?? 0} / 200 社 · 条件一致 {event?.matched ?? 0}{" "}
             / {event?.target ?? 20} 社
           </p>
+          <ProgressClock
+            startedAt={scan.startedAt}
+            running={
+              scan.running || scan.finishing || scan.cancellation === "pending"
+            }
+            waitingUntil={scan.waitingUntil}
+          />
+          {(scan.running || scan.finishing) && (
+            <p className="text-muted-foreground">
+              {goalPending
+                ? "次の目標件数を確認しています。"
+                : `条件一致${event?.target || 20}社に達するか、上限200社または取得範囲の最後まで確認すると終了します。`}{" "}
+              上限まで残り{Math.max(0, 200 - (event?.scanned ?? 0))}
+              社。取得先の応答で所要時間が変わります。
+            </p>
+          )}
           {scan.cancellation === "pending" ? (
             <p>停止を確認中です。確認が完了するまで再開できません。</p>
           ) : scan.cancellation === "failed" ? (
