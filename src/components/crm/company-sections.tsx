@@ -142,11 +142,12 @@ export function CompanyRecords({
         <Loading />
       ) : !result.data.data.length ? (
         <Empty
+          compact
           title={`${title}はまだありません`}
           description={
             resource === "contacts"
               ? "窓口や決裁者の情報を登録しましょう。"
-              : "わかったことから記録していきましょう。"
+              : undefined
           }
         />
       ) : (
@@ -319,11 +320,6 @@ export function Hearing({ companyId }: { companyId: string }) {
 export function Proposals({ companyId }: { companyId: string }) {
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          ヒアリングをもとに、最適な改善方法を整理しましょう。
-        </p>
-      </div>
       <ProposalDrafter key={companyId} companyId={companyId} />
       <div className="grid items-start gap-4 xl:grid-cols-3">
         {Object.entries(proposalTypeLabels).map(([type, title]) => (

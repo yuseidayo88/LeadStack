@@ -30,7 +30,7 @@ export default function CompanyDetail() {
     return (
       <div className="page">
         <Link href="/companies" className="text-primary">
-          企業一覧に戻る
+          営業リストに戻る
         </Link>
         <ErrorState error={result.error} retry={() => void result.mutate()} />
       </div>
@@ -61,7 +61,7 @@ export default function CompanyDetail() {
         className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary"
       >
         <ArrowLeft className="size-3.5" />
-        企業一覧
+        営業リスト
       </Link>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-start gap-4">

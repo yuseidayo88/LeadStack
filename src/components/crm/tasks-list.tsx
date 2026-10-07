@@ -98,7 +98,7 @@ export function TasksList() {
     <div className="page">
       <PageHeader
         title="タスク"
-        description="今日やることを明確に。フォローの機会を逃さずに。"
+        description="担当・期限・状態で絞り込み、対応するタスクを確認します。"
         action={<ResourceDialog resource="tasks" companyId={companyId} />}
       />
       {companyId && (
@@ -200,99 +200,131 @@ export function TasksList() {
                 description="期間や担当営業を切り替えるか、新しいタスクを追加してください。"
               />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="data-table min-w-[750px]">
-                  <thead>
-                    <tr>
-                      <th>
-                        <span className="sr-only">完了操作</span>
-                      </th>
-                      <th>タスク / 企業</th>
-                      <th>種類</th>
-                      <th>期限（日本時間）</th>
-                      <th>担当営業</th>
-                      <th>状態</th>
-                      <th>
-                        <span className="sr-only">操作</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result.data.data.map((t) => (
-                      <tr key={t.id}>
-                        <td className="w-10">
-                          <TaskComplete task={t} />
-                        </td>
-                        <td>
+              <>
+                <ul className="divide-y md:hidden" aria-label="タスク一覧">
+                  {result.data.data.map((task) => (
+                    <li key={task.id} className="min-w-0 space-y-3 p-4">
+                      <div className="flex items-start gap-2">
+                        <TaskComplete task={task} />
+                        <div className="min-w-0 flex-1">
                           <p
-                            className={
-                              t.status === "completed"
-                                ? "text-muted-foreground line-through"
-                                : "font-medium"
-                            }
+                            className={`break-words ${task.status === "completed" ? "text-muted-foreground line-through" : "font-medium"}`}
                           >
-                            {t.title}
+                            {task.title}
                           </p>
                           <Link
-                            href={`/companies/${t.company_id}`}
-                            className="mt-1 block text-xs text-muted-foreground hover:text-primary"
+                            href={`/companies/${task.company_id}`}
+                            className="mt-1 block break-words text-sm text-primary hover:underline"
                           >
-                            {t.company_name || "企業詳細"}
-                            {t.contact_name && ` / ${t.contact_name}`}
+                            {task.company_name || "企業詳細"}
+                            {task.contact_name && ` / ${task.contact_name}`}
                           </Link>
-                          {t.description && (
-                            <p className="mt-1 max-w-md whitespace-pre-wrap text-xs text-muted-foreground">
-                              {t.description}
-                            </p>
-                          )}
-                        </td>
-                        <td>
-                          <StatusBadge>
-                            {label(taskTypeLabels, t.type)}
-                          </StatusBadge>
-                        </td>
-                        <td
-                          className={`whitespace-nowrap text-xs ${t.status === "todo" && t.due_at && Date.parse(t.due_at) < Date.parse(start) ? "text-destructive" : "text-muted-foreground"}`}
-                        >
-                          {dateTime(t.due_at)}
-                        </td>
-                        <td className="text-xs">
-                          {members.find((m) => m.user_id === t.assigned_user_id)
-                            ?.profile?.name || "—"}
-                        </td>
-                        <td>
-                          <StatusBadge value={t.status}>
-                            {label(taskStatusLabels, t.status)}
-                          </StatusBadge>
-                        </td>
-                        <td>
-                          <div className="flex gap-1">
-                            <ResourceDialog
-                              resource="tasks"
-                              record={t}
-                              companyId={companyId}
-                              trigger={
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  aria-label={`${t.title}を編集`}
-                                >
-                                  <Pencil className="size-3.5" />
-                                </Button>
-                              }
-                            />
-                            <DeleteDialog
-                              resource="tasks"
-                              id={t.id}
-                              name={t.title}
-                            />
-                          </div>
-                        </td>
+                        </div>
+                      </div>
+                      <p
+                        className={`text-sm ${task.status === "todo" && task.due_at && Date.parse(task.due_at) < Date.parse(start) ? "text-destructive" : "text-muted-foreground"}`}
+                      >
+                        期限：{task.due_at ? dateTime(task.due_at) : "未設定"}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusBadge>
+                          {label(taskTypeLabels, task.type)}
+                        </StatusBadge>
+                        <StatusBadge value={task.status}>
+                          {label(taskStatusLabels, task.status)}
+                        </StatusBadge>
+                        <span className="text-xs text-muted-foreground">
+                          担当：
+                          {members.find(
+                            (member) =>
+                              member.user_id === task.assigned_user_id,
+                          )?.profile?.name || "未設定"}
+                        </span>
+                      </div>
+                      {task.description && (
+                        <p className="break-words whitespace-pre-wrap text-sm text-muted-foreground">
+                          {task.description}
+                        </p>
+                      )}
+                      <TaskActions task={task} companyId={companyId} />
+                    </li>
+                  ))}
+                </ul>
+                <div className="hidden overflow-x-auto md:block">
+                  <table className="data-table min-w-[750px]">
+                    <thead>
+                      <tr>
+                        <th>
+                          <span className="sr-only">完了操作</span>
+                        </th>
+                        <th>タスク / 企業</th>
+                        <th>種類</th>
+                        <th>期限（日本時間）</th>
+                        <th>担当営業</th>
+                        <th>状態</th>
+                        <th>
+                          <span className="sr-only">操作</span>
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {result.data.data.map((t) => (
+                        <tr key={t.id}>
+                          <td className="w-10">
+                            <TaskComplete task={t} />
+                          </td>
+                          <td>
+                            <p
+                              className={
+                                t.status === "completed"
+                                  ? "text-muted-foreground line-through"
+                                  : "font-medium"
+                              }
+                            >
+                              {t.title}
+                            </p>
+                            <Link
+                              href={`/companies/${t.company_id}`}
+                              className="mt-1 block text-xs text-muted-foreground hover:text-primary"
+                            >
+                              {t.company_name || "企業詳細"}
+                              {t.contact_name && ` / ${t.contact_name}`}
+                            </Link>
+                            {t.description && (
+                              <p className="mt-1 max-w-md whitespace-pre-wrap text-xs text-muted-foreground">
+                                {t.description}
+                              </p>
+                            )}
+                          </td>
+                          <td>
+                            <StatusBadge>
+                              {label(taskTypeLabels, t.type)}
+                            </StatusBadge>
+                          </td>
+                          <td
+                            className={`whitespace-nowrap text-xs ${t.status === "todo" && t.due_at && Date.parse(t.due_at) < Date.parse(start) ? "text-destructive" : "text-muted-foreground"}`}
+                          >
+                            {dateTime(t.due_at)}
+                          </td>
+                          <td className="text-xs">
+                            {members.find(
+                              (m) => m.user_id === t.assigned_user_id,
+                            )?.profile?.name || "—"}
+                          </td>
+                          <td>
+                            <StatusBadge value={t.status}>
+                              {label(taskStatusLabels, t.status)}
+                            </StatusBadge>
+                          </td>
+                          <td>
+                            <TaskActions task={t} companyId={companyId} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
             <Pagination
               page={page}
@@ -305,6 +337,34 @@ export function TasksList() {
       <p className="text-xs text-muted-foreground">
         日付の区切りは日本時間（JST）です。
       </p>
+    </div>
+  );
+}
+
+function TaskActions({
+  task: t,
+  companyId,
+}: {
+  task: Task;
+  companyId?: string;
+}) {
+  return (
+    <div className="flex gap-1">
+      <ResourceDialog
+        resource="tasks"
+        record={t}
+        companyId={companyId}
+        trigger={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`${t.title}を編集`}
+          >
+            <Pencil className="size-3.5" />
+          </Button>
+        }
+      />
+      <DeleteDialog resource="tasks" id={t.id} name={t.title} />
     </div>
   );
 }

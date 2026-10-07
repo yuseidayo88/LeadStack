@@ -5,7 +5,6 @@ import {
   Users,
   Settings2,
   UserRound,
-  Plug,
   MailPlus,
   ShieldCheck,
   Pencil,
@@ -91,32 +90,33 @@ export default function SettingsPage() {
               <p className="break-all text-sm">{profile.email}</p>
             </div>
           </section>
-          <section className="surface">
-            <SectionTitle icon={Plug} title="外部サービス連携" />
-            <div className="divide-y">
-              {[
-                ["Zoom Phone", "架電の開始・通話履歴の自動記録"],
-                ["OpenAI", "ヒアリングをもとに改善案を生成"],
-                ["n8n", "業務の自動化フローを連携"],
-              ].map(([name, desc]) => (
-                <div
-                  key={name}
-                  className="flex items-center justify-between gap-4 p-5"
-                >
-                  <div>
-                    <h3 className="font-medium">{name}</h3>
-                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                      {desc}
-                    </p>
+          <details className="surface px-5 py-4">
+            <summary className="cursor-pointer font-medium">
+              今後の外部サービス連携
+            </summary>
+            <div className="mt-3 space-y-3 text-sm">
+              <p className="text-muted-foreground">
+                以下の自動連携は現在未対応です。
+              </p>
+              <dl className="space-y-3">
+                {[
+                  ["Zoom Phone", "架電開始・通話履歴の自動記録"],
+                  ["OpenAI", "ヒアリングをもとに改善案を生成"],
+                  ["n8n", "業務の自動化フローを連携"],
+                ].map(([name, description]) => (
+                  <div key={name}>
+                    <dt className="font-medium">{name}</dt>
+                    <dd className="mt-1 text-xs text-muted-foreground">
+                      {description}
+                    </dd>
                   </div>
-                  <StatusBadge>準備中</StatusBadge>
-                </div>
-              ))}
-              <p className="p-5 text-xs leading-5 text-muted-foreground">
-                現在は手動で架電記録・改善提案を登録できます。外部サービスの契約やAPIキーは必要ありません。
+                ))}
+              </dl>
+              <p className="text-xs leading-5 text-muted-foreground">
+                架電記録・改善提案の手動登録に、これらのサービスの契約やAPIキーは不要です。
               </p>
             </div>
-          </section>
+          </details>
         </div>
         <MembersSection />
       </div>

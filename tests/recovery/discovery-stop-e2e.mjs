@@ -159,7 +159,7 @@ async function organization(p, id, destination = "/discover") {
   if (destination === "/discover") await expandSearchOptions(p);
   await expect(
     p.getByRole("heading", {
-      name: destination === "/discover" ? "企業を探す" : "企業",
+      name: destination === "/discover" ? "企業を探す" : "営業リスト",
       exact: true,
     }),
   ).toBeVisible();
@@ -626,7 +626,10 @@ try {
         const cancelled = cancelResponse(page, target.endpoint);
         if (lifecycle === "reload") await page.reload();
         else if (lifecycle === "navigation") {
-          const link = page.getByRole("link", { name: "企業", exact: true });
+          const link = page.getByRole("link", {
+            name: "営業リスト",
+            exact: true,
+          });
           await link.click();
           await page.waitForURL((url) => url.pathname === "/companies");
         } else

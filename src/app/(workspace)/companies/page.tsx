@@ -1,4 +1,5 @@
 "use client";
+import { CompaniesMobileList } from "@/components/crm/companies-mobile-list";
 import { ActivityDialog } from "@/components/crm/activity";
 import { phoneHref } from "@/lib/crm/search";
 import { CompanyImport } from "@/components/crm/company-import";
@@ -98,8 +99,8 @@ export default function Companies() {
   return (
     <div className="page">
       <PageHeader
-        title="企業"
-        description="最終接触：接続・折返し・アポイントの架電、メール、打合せ。社内メモ・状態変更・不通は含みません。"
+        title="営業リスト"
+        description="登録した企業への架電と次回タスクを確認します。"
         action={
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline">
@@ -136,11 +137,11 @@ export default function Companies() {
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm">
                 <SlidersHorizontal />
-                表示列
+                表示項目
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuLabel>表示する列</DropdownMenuLabel>
+              <DropdownMenuLabel>表示する項目</DropdownMenuLabel>
               {Object.entries(columns).map(([key, name]) => (
                 <DropdownMenuCheckboxItem
                   key={key}
@@ -215,184 +216,210 @@ export default function Companies() {
         ) : !rows.data ? (
           <Loading />
         ) : rows.data.data.length ? (
-          <div className="overflow-x-auto">
-            <table className="data-table min-w-[850px]">
-              <thead>
-                <tr>
-                  <th className="w-10">
-                    <input
-                      type="checkbox"
-                      aria-label="このページの企業をすべて選択"
-                      checked={all}
-                      onChange={(e) =>
-                        setSelected(
-                          e.target.checked
-                            ? rows.data!.data.map((r) => r.id)
-                            : [],
-                        )
-                      }
-                    />
-                  </th>
-                  <th
-                    aria-sort={
-                      sort === "name"
-                        ? direction === "asc"
-                          ? "ascending"
-                          : "descending"
-                        : "none"
-                    }
-                  >
-                    <button
-                      className="flex items-center gap-2"
-                      onClick={() => order("name")}
-                    >
-                      会社名
-                      <ArrowUpDown className="size-3" />
-                    </button>
-                  </th>
-                  {Object.entries(columns)
-                    .filter(([k]) => has(k))
-                    .map(([k, l]) => (
-                      <th key={k}>
-                        {k === "last" ? (
-                          <button
-                            className="flex items-center gap-2"
-                            onClick={() => order("last_contact_at")}
-                          >
-                            {l}
-                            <ArrowUpDown className="size-3" />
-                          </button>
-                        ) : (
-                          l
-                        )}
-                      </th>
-                    ))}
-                  {canWrite && <th>架電</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.data.data.map((c) => (
-                  <tr
-                    key={c.id}
-                    className="cursor-pointer"
-                    data-state={
-                      selected.includes(c.id) ? "selected" : undefined
-                    }
-                    onClick={(e) => {
-                      if (
-                        e.currentTarget.contains(e.target as Node) &&
-                        !(e.target as HTMLElement).closest("a,button,input")
-                      )
-                        router.push(`/companies/${c.id}`);
-                    }}
-                  >
-                    <td>
+          <>
+            <CompaniesMobileList
+              companies={rows.data.data}
+              selected={selected}
+              visible={visible}
+              canWrite={canWrite}
+              all={all}
+              sort={sort}
+              direction={direction}
+              onToggle={(id, checked) =>
+                setSelected(
+                  checked
+                    ? [...selected, id]
+                    : selected.filter((value) => value !== id),
+                )
+              }
+              onTogglePage={(checked) =>
+                setSelected(checked ? rows.data!.data.map((row) => row.id) : [])
+              }
+              onSort={(sort, direction) => {
+                setSort(sort);
+                setDirection(direction);
+                setPage(1);
+              }}
+            />
+            <div className="hidden overflow-x-auto md:block">
+              <table className="data-table min-w-[850px]">
+                <thead>
+                  <tr>
+                    <th className="w-10">
                       <input
                         type="checkbox"
-                        aria-label={`${c.name}を選択`}
-                        checked={selected.includes(c.id)}
+                        aria-label="このページの企業をすべて選択"
+                        checked={all}
                         onChange={(e) =>
                           setSelected(
                             e.target.checked
-                              ? [...selected, c.id]
-                              : selected.filter((id) => id !== c.id),
+                              ? rows.data!.data.map((r) => r.id)
+                              : [],
                           )
                         }
                       />
-                    </td>
-                    <td>
-                      <Link
-                        href={`/companies/${c.id}`}
-                        className="flex min-w-44 items-center gap-2.5 font-medium hover:text-primary"
+                    </th>
+                    <th
+                      aria-sort={
+                        sort === "name"
+                          ? direction === "asc"
+                            ? "ascending"
+                            : "descending"
+                          : "none"
+                      }
+                    >
+                      <button
+                        className="flex items-center gap-2"
+                        onClick={() => order("name")}
                       >
-                        <span className="rounded border bg-slate-50 p-1.5 text-muted-foreground">
-                          <Building2 className="size-4" />
-                        </span>
-                        {c.name}
-                      </Link>
-                    </td>
-                    {has("industry") && (
-                      <td className="whitespace-nowrap text-xs">
-                        {c.industry || "—"}
-                      </td>
-                    )}
-                    {has("region") && (
-                      <td className="whitespace-nowrap text-xs">
-                        {[c.prefecture, c.city].filter(Boolean).join(" ") ||
-                          "—"}
-                      </td>
-                    )}
-                    {has("size") && (
-                      <td className="whitespace-nowrap text-xs">
-                        {c.employee_min != null || c.employee_max != null
-                          ? `${c.employee_min ?? "?"}〜${c.employee_max ?? "?"}名`
-                          : "—"}
-                      </td>
-                    )}
-                    {has("phone") && (
-                      <td className="whitespace-nowrap font-mono text-xs">
-                        {phoneHref(c.phone) ? (
-                          <a
-                            className="hover:text-primary hover:underline"
-                            href={phoneHref(c.phone)}
-                          >
-                            {c.phone}
-                          </a>
-                        ) : (
-                          c.phone || "—"
-                        )}
-                      </td>
-                    )}
-                    {has("owner") && (
-                      <td className="whitespace-nowrap text-xs">
-                        {c.assigned_user_name || "未設定"}
-                      </td>
-                    )}
-                    {has("status") && (
+                        会社名
+                        <ArrowUpDown className="size-3" />
+                      </button>
+                    </th>
+                    {Object.entries(columns)
+                      .filter(([k]) => has(k))
+                      .map(([k, l]) => (
+                        <th key={k}>
+                          {k === "last" ? (
+                            <button
+                              className="flex items-center gap-2"
+                              onClick={() => order("last_contact_at")}
+                            >
+                              {l}
+                              <ArrowUpDown className="size-3" />
+                            </button>
+                          ) : (
+                            l
+                          )}
+                        </th>
+                      ))}
+                    {canWrite && <th>架電</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.data.data.map((c) => (
+                    <tr
+                      key={c.id}
+                      className="cursor-pointer"
+                      data-state={
+                        selected.includes(c.id) ? "selected" : undefined
+                      }
+                      onClick={(e) => {
+                        if (
+                          e.currentTarget.contains(e.target as Node) &&
+                          !(e.target as HTMLElement).closest("a,button,input")
+                        )
+                          router.push(`/companies/${c.id}`);
+                      }}
+                    >
                       <td>
-                        <StatusBadge value={c.company_status}>
-                          {label(companyStatusLabels, c.company_status)}
-                        </StatusBadge>
-                      </td>
-                    )}
-                    {has("task") && (
-                      <td className="max-w-48 text-xs">
-                        {c.next_task ? (
-                          <Link
-                            href={`/tasks?company_id=${c.id}`}
-                            className="block hover:text-primary"
-                          >
-                            <p className="truncate">{c.next_task.title}</p>
-                            <p className="mt-1 text-muted-foreground">
-                              {dateTime(c.next_task.due_at)}
-                            </p>
-                          </Link>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                    )}
-                    {has("last") && (
-                      <td className="whitespace-nowrap text-xs text-muted-foreground">
-                        {c.last_contact_at
-                          ? dateTime(c.last_contact_at, true)
-                          : "未接触"}
-                      </td>
-                    )}
-                    {canWrite && (
-                      <td>
-                        <ActivityDialog
-                          companyId={c.id}
-                          companyName={c.name}
-                          phone={c.phone}
+                        <input
+                          type="checkbox"
+                          aria-label={`${c.name}を選択`}
+                          checked={selected.includes(c.id)}
+                          onChange={(e) =>
+                            setSelected(
+                              e.target.checked
+                                ? [...selected, c.id]
+                                : selected.filter((id) => id !== c.id),
+                            )
+                          }
                         />
                       </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      <td>
+                        <Link
+                          href={`/companies/${c.id}`}
+                          className="flex min-w-44 items-center gap-2.5 font-medium hover:text-primary"
+                        >
+                          <span className="rounded border bg-slate-50 p-1.5 text-muted-foreground">
+                            <Building2 className="size-4" />
+                          </span>
+                          {c.name}
+                        </Link>
+                      </td>
+                      {has("industry") && (
+                        <td className="whitespace-nowrap text-xs">
+                          {c.industry || "—"}
+                        </td>
+                      )}
+                      {has("region") && (
+                        <td className="whitespace-nowrap text-xs">
+                          {[c.prefecture, c.city].filter(Boolean).join(" ") ||
+                            "—"}
+                        </td>
+                      )}
+                      {has("size") && (
+                        <td className="whitespace-nowrap text-xs">
+                          {c.employee_min != null || c.employee_max != null
+                            ? `${c.employee_min ?? "?"}〜${c.employee_max ?? "?"}名`
+                            : "—"}
+                        </td>
+                      )}
+                      {has("phone") && (
+                        <td className="whitespace-nowrap font-mono text-xs">
+                          {phoneHref(c.phone) ? (
+                            <a
+                              className="hover:text-primary hover:underline"
+                              href={phoneHref(c.phone)}
+                            >
+                              {c.phone}
+                            </a>
+                          ) : (
+                            c.phone || "—"
+                          )}
+                        </td>
+                      )}
+                      {has("owner") && (
+                        <td className="whitespace-nowrap text-xs">
+                          {c.assigned_user_name || "未設定"}
+                        </td>
+                      )}
+                      {has("status") && (
+                        <td>
+                          <StatusBadge value={c.company_status}>
+                            {label(companyStatusLabels, c.company_status)}
+                          </StatusBadge>
+                        </td>
+                      )}
+                      {has("task") && (
+                        <td className="max-w-48 text-xs">
+                          {c.next_task ? (
+                            <Link
+                              href={`/tasks?company_id=${c.id}`}
+                              className="block hover:text-primary"
+                            >
+                              <p className="truncate">{c.next_task.title}</p>
+                              <p className="mt-1 text-muted-foreground">
+                                {dateTime(c.next_task.due_at)}
+                              </p>
+                            </Link>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
+                      )}
+                      {has("last") && (
+                        <td className="whitespace-nowrap text-xs text-muted-foreground">
+                          {c.last_contact_at
+                            ? dateTime(c.last_contact_at, true)
+                            : "未接触"}
+                        </td>
+                      )}
+                      {canWrite && (
+                        <td>
+                          <ActivityDialog
+                            companyId={c.id}
+                            companyName={c.name}
+                            phone={c.phone}
+                          />
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         ) : (
           <Empty
             title={
@@ -413,6 +440,12 @@ export default function Companies() {
           }}
         />
       </div>
+      <details className="text-xs text-muted-foreground">
+        <summary className="cursor-pointer">最終接触に含まれる活動</summary>
+        <p className="mt-2">
+          接続・折返し・アポイントの架電、メール、打合せが対象です。社内メモ・状態変更・不通は含みません。
+        </p>
+      </details>
     </div>
   );
 }

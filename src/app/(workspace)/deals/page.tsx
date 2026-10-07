@@ -5,7 +5,7 @@ export default function DealsPage() {
     <div className="page">
       <PageHeader
         title="商談"
-        description="ヒアリングから成約まで、チームの進捗をひと目で。"
+        description="商談の進捗と次のアクションを確認します。"
       />
       <DealsList />
     </div>

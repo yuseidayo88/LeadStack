@@ -135,7 +135,7 @@ async function organization(p, id, destination = "/discover") {
   await p.goto(base + destination);
   await expect(
     p.getByRole("heading", {
-      name: destination === "/discover" ? "企業を探す" : "企業",
+      name: destination === "/discover" ? "企業を探す" : "営業リスト",
       exact: true,
     }),
   ).toBeVisible();

@@ -58,16 +58,26 @@ export function Empty({
   title,
   description,
   action,
+  compact = false,
 }: {
   title: string;
   description?: string;
   action?: ReactNode;
+  compact?: boolean;
 }) {
   return (
-    <div className="flex flex-col items-center gap-3 px-6 py-7 text-center">
-      <div className="rounded-xl bg-muted p-3 text-muted-foreground">
-        <Inbox className="size-6" />
-      </div>
+    <div
+      className={
+        compact
+          ? "space-y-2 px-4 py-4 text-sm text-muted-foreground"
+          : "flex flex-col items-center gap-3 px-6 py-7 text-center"
+      }
+    >
+      {!compact && (
+        <div className="rounded-xl bg-muted p-3 text-muted-foreground">
+          <Inbox className="size-6" />
+        </div>
+      )}
       <p className="font-medium">{title}</p>
       {description && (
         <p className="max-w-sm text-sm text-muted-foreground">{description}</p>

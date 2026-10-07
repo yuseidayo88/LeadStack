@@ -31,3 +31,5 @@ API、DB、RLS、認証、検索アルゴリズム、利用上限、外部サー
 証跡: `/workspace/handoff/search-compact-{unit,build,saved,progress,stop,targeting,phone,workflow}.log`。新画面と計測値は `/workspace/handoff/search-compact-workflow/`。
 
 今回先行した範囲は検索・架電・共通空表示。ダッシュボードの重複タスク整理、営業リスト／タスク一覧のモバイルカード化、設定の将来連携表示の整理は未着手。公開前の実環境での最終確認も未実施。
+
+後続の周辺画面整理は [監査対応と検証結果](UI-REMAINDER-VALIDATION.md) を参照。公開環境への反映は引き続き未実施。

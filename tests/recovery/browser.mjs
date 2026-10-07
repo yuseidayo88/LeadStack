@@ -10,7 +10,7 @@ const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
 try {
   await page.goto(base + "/login?error=confirmation");
-  await page.getByRole("heading", { name: "おかえりなさい" }).waitFor();
+  await page.getByRole("heading", { name: "ログイン" }).waitFor();
   assert.match(
     await page
       .getByRole("alert")

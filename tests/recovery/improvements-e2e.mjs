@@ -140,6 +140,10 @@ try {
   assert.ok(dash.overdue.some((t) => t.title === "期限超過フォロー"));
   assert.ok(dash.missingNext.some((c) => c.id === noTask.id));
   await page.goto(base + "/dashboard");
+  await page
+    .locator("summary")
+    .filter({ hasText: "次のタスクがない担当企業" })
+    .click();
   await expect(
     page.getByText("期限超過フォロー", { exact: true }),
   ).toBeVisible();
@@ -163,7 +167,11 @@ try {
   ])
     await page.getByLabel(label).selectOption({ index: 1 });
   await page.getByLabel("選択した登録情報をヒアリングで確認済み").check();
-  for (const title of ["新規システム構築", "n8n 自動化", "既存ツール維持"]) {
+  for (const title of [
+    "新規システム構築",
+    "ツール連携・自動化",
+    "既存ツール維持",
+  ]) {
     await page
       .getByRole("button", { name: title + "の下書きを確認", exact: true })
       .click();

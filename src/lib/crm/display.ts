@@ -62,7 +62,7 @@ export const callResultLabels = {
 };
 export const proposalTypeLabels = {
   build: "新規システム構築",
-  automate: "n8n 自動化",
+  automate: "ツール連携・自動化",
   keep: "既存ツール維持",
 };
 export const proposalStatusLabels = {

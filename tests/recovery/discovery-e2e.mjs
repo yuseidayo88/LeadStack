@@ -129,7 +129,7 @@ async function organization(p, id, destination = "/discover") {
   await p.goto(base + destination);
   await expect(
     p.getByRole("heading", {
-      name: destination === "/discover" ? "企業を探す" : "企業",
+      name: destination === "/discover" ? "企業を探す" : "営業リスト",
       exact: true,
     }),
   ).toBeVisible();
@@ -145,7 +145,9 @@ async function choose(p, label, option, search = option) {
 }
 
 async function searchFor(value) {
-  await page.getByLabel("企業名・法人番号（任意）", { exact: true }).fill(value);
+  await page
+    .getByLabel("企業名・法人番号（任意）", { exact: true })
+    .fill(value);
 }
 
 async function visibleCount(count) {

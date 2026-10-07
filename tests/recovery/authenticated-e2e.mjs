@@ -131,6 +131,10 @@ try {
   ).toHaveAttribute("required", "");
   await page
     .getByRole("dialog")
+    .getByText("活動の詳細（種類・日時・担当者など）", { exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
     .getByLabel("再架電タスク名", { exact: true })
     .fill("E2E折返し");
   await page

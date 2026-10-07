@@ -173,7 +173,7 @@ function WorkspaceLoader({ children }: { children: ReactNode }) {
 }
 const nav = [
   { href: "/dashboard", label: "ダッシュボード", icon: LayoutDashboard },
-  { href: "/companies", label: "企業", icon: Building2 },
+  { href: "/companies", label: "営業リスト", icon: Building2 },
   { href: "/discover", label: "企業を探す", icon: Search },
   { href: "/deals", label: "商談", icon: Handshake },
   { href: "/tasks", label: "タスク", icon: ListTodo },
@@ -312,10 +312,7 @@ function WorkspaceShell({ children }: { children: ReactNode }) {
                 <Navigation close={() => setMobile(false)} />
               </SheetContent>
             </Sheet>
-            <span className="text-xs text-muted-foreground">
-              ワークスペース <span className="mx-2 text-slate-300">/</span>
-              <span className="text-foreground">{title}</span>
-            </span>
+            <span className="text-xs text-foreground">{title}</span>
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

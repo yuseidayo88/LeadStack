@@ -49,6 +49,9 @@ try {
   await page.getByRole("button", { name: "架電を記録", exact: true }).click();
   await dialog.locator("select[name=result]").selectOption("callback");
   const title = "通信中断再送-" + Date.now();
+  await dialog
+    .getByText("活動の詳細（種類・日時・担当者など）", { exact: true })
+    .click();
   await dialog.getByLabel("件名", { exact: true }).fill(title);
   await dialog.getByLabel("再架電タスク名", { exact: true }).fill(title);
   await dialog
