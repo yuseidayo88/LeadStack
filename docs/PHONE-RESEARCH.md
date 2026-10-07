@@ -18,6 +18,7 @@
 
 - 有料検索API・AI API・データ購入・新サービスの追加なし。既存gBizINFOと登録済み公式サイトのみ。
 - 一括操作は最大10社、常に1社ずつ。1組織1時間20回の既存DB制限を維持する。個別確認とも共通の枠。
+- 回数枠は最初の予約から1時間で更新する固定方式。任意の連続60分で20回以下を保証するローリング方式ではなく、枠の境界をまたぐと60分合計が20回を超える場合がある。20回は調査予約数であり、ユニーク企業数・HTTP要求数ではない。
 - 保存済み電話番号、CRMの電話番号、公式URLなし、24時間以内の調査結果はサーバーで判定し、サイト取得を省略。成功だけでなく「見つからない」「自動取得不可」も再利用する。
 - 再確認が必要な場合は企業詳細で個別に実行する。この場合も同じ回数制限が適用される。
 - 各社最大8秒、各応答1MiB、robots.txtと最大2HTMLページ、最大2転送の既存制限を維持。公開IP・転送先検証、robotsの取得拒否等を尊重する。
@@ -47,6 +48,8 @@ npm run typecheck
 npm run build
 # 独立ローカルAuth/PostgREST + 合成サイト用preloadで起動したアプリのみ
 E2E_BASE_URL=http://localhost:3013 E2E_USERS_FILE=/workspace/handoff/e2e-private/users.json PLAYWRIGHT_BROWSERS_PATH=/workspace/.cache/ms-playwright node tests/recovery/phone-research-e2e.mjs
+# 同じローカル専用アプリ + 実Postgresの予約ロックを利用する複数タブ試験
+E2E_BASE_URL=http://localhost:3013 E2E_USERS_FILE=/workspace/handoff/e2e-private/users.json PLAYWRIGHT_BROWSERS_PATH=/workspace/.cache/ms-playwright node tests/recovery/phone-research-concurrency-e2e.mjs
 ```
 
 `phone-research-preload.mjs` は明示的に有効化したローカルNextプロセスでのみ合成HTMLを返し、外部DNS/HTTP/fetchを遮断する。実サイトの電話取得率と、本番での処理・通信使用量はこのテストでは測定しない。
@@ -62,3 +65,13 @@ E2E_BASE_URL=http://localhost:3013 E2E_USERS_FILE=/workspace/handoff/e2e-private
 - lint・型検査・本番ビルド・変更ファイルのPrettier検査・git diff検査成功。本番ビルド用の隔離コピーと変更したアプリコード7ファイルのSHA-256一致を確認。
 
 証跡: `/workspace/handoff/phone-research-*.log`、`/workspace/handoff/phone-research-build-source.json`。画面: `test-results/phone-research/`。本番公開・本番DB/API・実企業サイトへの調査は実施していない。
+
+### 複数タブの追加確認
+
+実ローカルAuth/PostgRESTと合成サイトを使用。DB予約ロックを一時保持して、実際に2接続が同時に待つことを観測してから解放した。ローカルPostgRESTの接続プールは2本で、3タブ目の要求は接続プール内で待機し得る。HTTP取得ログは応答完了時ではなく要求開始時に記録し、中断した取得も検知できるようにした。
+
+- 18/20予約済みで別候補を3タブから同時実行: 200が2件、429が1件。固定枠は20、取得は2サイトだけ（robots＋HTMLが各1要求）。追加の4社目も429となり、外部取得は増えない。
+- 同じ候補を2タブで同じ更新バージョンから同時実行: 200が1件、409が1件、取得は1サイトだけ。進行中に開始した3タブ目はpendingを再利用し、追加取得・予約なし。競合に負けた要求も枠を予約済みなので、調査予約は2、実取得は1となる。
+- 19/20予約済みで2タブが各2社のキューを開始: 取得できる1社を処理中に停止。停止中は現在の企業を「調査中」、次を「待機中」と表示し、保存後は進捗1/2、次を「未実行」と表示。もう一方は429で後続を開始しない。取得は1サイト、枠は20。拒否・未着手の3候補は結果と更新日時が不変。
+
+証跡: `/workspace/handoff/phone-concurrency-e2e.log`、`test-results/phone-concurrency/evidence.json`、同ディレクトリの画面。ブラウザー実行時エラー0。固定枠方式・停止仕様・アプリコードは変更していない。

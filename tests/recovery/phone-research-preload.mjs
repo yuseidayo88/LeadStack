@@ -2,7 +2,7 @@
 // fetch are blocked; synthetic HTML exercises the actual server extractor.
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { appendFile } from "node:fs/promises";
+import { appendFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import dns from "node:dns/promises";
 import http from "node:http";
@@ -46,6 +46,16 @@ if (process.env.LEADSTACK_LOCAL_PHONE_MOCK === "1") {
       );
       const request = new EventEmitter();
       request.end = () => {
+        // Record attempts before a response or abort so concurrency assertions
+        // also detect requests whose delayed body never completes.
+        appendFileSync(
+          "/workspace/handoff/e2e-private/phone-requests.jsonl",
+          JSON.stringify({
+            host: hostname,
+            path: url.pathname,
+            at: Date.now(),
+          }) + "\n",
+        );
         let finished = false;
         const aborted = () => {
           if (finished) return;
@@ -54,18 +64,10 @@ if (process.env.LEADSTACK_LOCAL_PHONE_MOCK === "1") {
           request.emit("error", new Error("Aborted"));
         };
         const timer = setTimeout(
-          async () => {
+          () => {
             if (finished) return;
             finished = true;
             options.signal?.removeEventListener("abort", aborted);
-            await appendFile(
-              "/workspace/handoff/e2e-private/phone-requests.jsonl",
-              JSON.stringify({
-                host: hostname,
-                path: url.pathname,
-                at: Date.now(),
-              }) + "\n",
-            );
             const robots = url.pathname === "/robots.txt";
             const response = new EventEmitter();
             response.statusCode = 200;
@@ -94,9 +96,13 @@ if (process.env.LEADSTACK_LOCAL_PHONE_MOCK === "1") {
             if (!destroyed) response.emit("data", Buffer.from(body));
             if (!destroyed) response.emit("end");
           },
-          hostname.startsWith("slow.") && url.pathname !== "/robots.txt"
-            ? 2000
-            : 40,
+          url.pathname === "/robots.txt"
+            ? 40
+            : hostname.startsWith("slow4.")
+              ? 4000
+              : hostname.startsWith("slow.")
+                ? 2000
+                : 40,
         );
         options.signal?.addEventListener("abort", aborted, { once: true });
         if (options.signal?.aborted) aborted();
