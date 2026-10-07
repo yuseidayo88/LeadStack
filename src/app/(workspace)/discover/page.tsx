@@ -38,6 +38,8 @@ import { PhoneResearchDialog } from "@/components/discovery/phone-research-dialo
 import { PHONE_RESEARCH_BATCH_LIMIT } from "@/lib/discovery/phone-research";
 import { TargetingFilters } from "@/components/discovery/targeting-filters";
 import { DiscoveryScanPanel } from "@/components/discovery/scan-panel";
+import { SavedDiscoverySearches } from "@/components/discovery/saved-searches";
+import { DiscoveryFilterChips } from "@/components/discovery/filter-chips";
 import { useDiscoveryScan } from "@/components/discovery/use-discovery-scan";
 import {
   hasScanCriteria,
@@ -359,6 +361,18 @@ function OrganizationDiscovery() {
             )}
           </div>
         </div>
+        <SavedDiscoverySearches
+          key={`${profile.id}.${base}`}
+          base={base}
+          actorId={profile.id}
+          filters={filters}
+          disabled={scan.running || scan.blocked || removing}
+          onApply={(saved) => {
+            void scan.cancel();
+            setRefreshDetails(false);
+            changeFilters(saved);
+          }}
+        />
         <fieldset className="grid gap-3 md:grid-cols-[minmax(180px,.8fr)_minmax(220px,1fr)_minmax(200px,1.3fr)]">
           <div>
             <label className="field-label" htmlFor="discovery-prefecture">
@@ -433,6 +447,7 @@ function OrganizationDiscovery() {
             </label>
           ))}
         </div>
+        <DiscoveryFilterChips filters={filters} onChange={changeFilters} />
         <DiscoveryScanPanel
           scan={scan}
           canWrite={canWrite}
