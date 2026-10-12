@@ -344,6 +344,116 @@ afterEach(() => {
 });
 
 describe("recent detail reuse", () => {
+  test("fresh unknown details share the existing stop budget across five-detail chunks", async () => {
+    upstream(
+      Array.from({ length: 30 }, (_, i) =>
+        company(i + 1, { employeeNumber: (i + 1) % 4 ? null : 25 }),
+      ),
+    );
+    const { db, rows, job } = database();
+    job.detailLimit = 5;
+    job.searchLimit = 2;
+    const criteria = scanCriteria.parse({
+      prefecture: "13",
+      employeeMin: 10,
+      employeeMax: 50,
+    });
+    let resumeToken: string | undefined;
+    for (let chunk = 1; chunk <= 4; chunk++) {
+      const result = last(
+        await events(
+          await startCompanyScan(db, org, { criteria, resumeToken }),
+        ),
+      );
+      expect(result).toMatchObject({
+        scanned: chunk * 5,
+        saved: chunk * 5,
+        reused: 0,
+        target: 20,
+        reason: chunk < 4 ? "chunk_limit" : "target",
+      });
+      expect(result.matched + result.needsReview!).toBe(chunk * 5);
+      expect(job.details).toBe(5);
+      if (chunk === 4)
+        expect(result).toMatchObject({ matched: 5, needsReview: 15 });
+      resumeToken = result.resumeToken!;
+    }
+    expect(searchGbizCompanies).toHaveBeenCalledTimes(1);
+    expect(getGbizCompany).toHaveBeenCalledTimes(20);
+    expect(rows.size).toBe(20);
+    expect(rows.has(number(21))).toBe(false);
+  });
+
+  test("separating unknowns keeps the same 20-candidate stop budget and resumes without extra calls", async () => {
+    upstream(Array.from({ length: 30 }, (_, i) => company(i + 1)));
+    const { db, rows, job } = database();
+    job.detailLimit = 5;
+    for (let i = 1; i <= 30; i++)
+      rows.set(number(i), cachedRow(i, { employee_number: i % 4 ? null : 25 }));
+    const before = structuredClone([...rows.values()]);
+    const criteria = scanCriteria.parse({
+      prefecture: "13",
+      employeeMin: 10,
+      employeeMax: 50,
+    });
+    const first = last(
+      await events(await startCompanyScan(db, org, { criteria })),
+    );
+    expect(first).toMatchObject({
+      reason: "target",
+      scanned: 20,
+      matched: 5,
+      needsReview: 15,
+      target: 20,
+      saved: 0,
+      reused: 20,
+    });
+    expect(first.matchedIds).toHaveLength(5);
+    expect(searchGbizCompanies).toHaveBeenCalledTimes(1);
+    expect(getGbizCompany).not.toHaveBeenCalled();
+    expect([...rows.values()]).toEqual(before);
+    const next = last(
+      await events(
+        await startCompanyScan(db, org, {
+          criteria,
+          resumeToken: first.resumeToken!,
+        }),
+      ),
+    );
+    expect(next).toMatchObject({
+      reason: "exhausted",
+      scanned: 30,
+      matched: 7,
+      needsReview: 23,
+      target: 40,
+    });
+    expect(
+      vi.mocked(searchGbizCompanies).mock.calls.map(([params]) => params.page),
+    ).toEqual([1, 2]);
+    expect(getGbizCompany).not.toHaveBeenCalled();
+    expect([...rows.values()]).toEqual(before);
+  });
+
+  test("duplicate unknown companies consume positions but not duplicate review slots", async () => {
+    upstream([company(1), company(1), company(2)]);
+    const { db, rows } = database();
+    rows.set(number(1), cachedRow(1, { employee_number: null }));
+    rows.set(number(2), cachedRow(2));
+    const result = last(
+      await events(
+        await startCompanyScan(db, org, {
+          criteria: scanCriteria.parse({ prefecture: "13", employeeMin: 10 }),
+        }),
+      ),
+    );
+    expect(result).toMatchObject({
+      scanned: 3,
+      matched: 1,
+      needsReview: 1,
+      reused: 2,
+    });
+    expect(getGbizCompany).not.toHaveBeenCalled();
+  });
   test("checks twenty recent candidates in one chunk without spending five-detail budget or rewriting timestamps", async () => {
     upstream(Array.from({ length: 20 }, (_, i) => company(i + 1)));
     const { db, rows, calls, job } = database();
@@ -691,7 +801,8 @@ describe("streaming company discovery", () => {
     expect(result).toMatchObject({
       reason: "exhausted",
       scanned: 4,
-      matched: 2,
+      matched: 1,
+      needsReview: 1,
       unknownEmployees: 1,
       detailsFailed: 0,
       resumeToken: null,
@@ -749,7 +860,8 @@ describe("streaming company discovery", () => {
       reason: "exhausted",
       scanned: 3,
       saved: 1,
-      matched: 1,
+      matched: 0,
+      needsReview: 1,
       detailsFailed: 2,
       unknownEmployees: 1,
       unknownIndustry: 1,

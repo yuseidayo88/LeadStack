@@ -16,6 +16,7 @@ import {
   object,
 } from "./mapping";
 import { industryOptions } from "./industries";
+import { discoveryMatchEvidence } from "./match-evidence";
 import { enrichOfficialWebsite } from "./website-enrichment";
 import type {
   Candidate,
@@ -46,6 +47,20 @@ export async function listCandidates(
   input: DiscoveryQuery,
 ): Promise<DiscoveryListResponse> {
   const summaryView = input.view === "summary";
+  const review = input.resultGroup === "needs_review";
+  const missing: string[] = [];
+  if (
+    (input.employeeMin !== undefined || input.employeeMax !== undefined) &&
+    input.includeUnknownEmployees === "true" &&
+    input.hasEmployees !== "true"
+  )
+    missing.push("employee_number.is.null");
+  if (
+    input.industry &&
+    input.industry !== "unknown" &&
+    input.includeUnknownIndustry === "true"
+  )
+    missing.push("industry_codes.cd.{}");
   // Keep evidence and enrichment payloads off the table response. The detail
   // endpoint loads them only when a candidate is opened. JSON path projection
   // also avoids sending the full provenance object across the DB connection.
@@ -65,7 +80,7 @@ export async function listCandidates(
       q =
         input.industry === "unknown"
           ? q.containedBy("industry_codes", [])
-          : input.includeUnknownIndustry === "true"
+          : review && input.includeUnknownIndustry === "true"
             ? q.or(`industry_codes.cs.{${input.industry}},industry_codes.cd.{}`)
             : q.contains("industry_codes", [input.industry]);
     const employeeFilters = [
@@ -76,7 +91,11 @@ export async function listCandidates(
         ? []
         : [`employee_number.lte.${input.employeeMax}`]),
     ];
-    if (employeeFilters.length && input.includeUnknownEmployees === "true") {
+    if (
+      review &&
+      employeeFilters.length &&
+      input.includeUnknownEmployees === "true"
+    ) {
       q = q.or(`employee_number.is.null,and(${employeeFilters.join(",")})`);
     } else {
       if (input.employeeMin !== undefined)
@@ -89,6 +108,9 @@ export async function listCandidates(
     if (input.hasWebsite === "true")
       q = q.not("website_url", "is", null).neq("website_url", "");
     if (input.hasEmployees === "true") q = q.not("employee_number", "is", null);
+    // Retain all other predicates so a known mismatch cannot enter review.
+    // With no missing required fields, id.is.null makes this group empty.
+    if (review) q = q.or(missing.length ? missing.join(",") : "id.is.null");
     return q
       .order(input.sort, {
         ascending: input.direction === "asc",
@@ -146,8 +168,14 @@ export async function listCandidates(
       business_summary_truncated?: boolean;
     })[]
   ).map((row) => {
-    if (!summaryView) return candidate(row);
-    const summary = row.business_summary ?? "";
+    const full = summaryView ? row : candidate(row);
+    const summary = full.business_summary ?? "";
+    const matchEvidence = discoveryMatchEvidence(
+      { ...row, business_summary: summary },
+      input,
+    );
+    if (!summaryView)
+      return { ...full, match_evidence: matchEvidence } as Candidate;
     const searchable = `${row.name} ${summary}`.toLocaleLowerCase("ja");
     return {
       ...row,
@@ -161,6 +189,7 @@ export async function listCandidates(
       matched_business_keywords: input.businessKeywords.filter((term) =>
         searchable.includes(term.toLocaleLowerCase("ja")),
       ),
+      match_evidence: matchEvidence,
     };
   });
   if (data.length) {

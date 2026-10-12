@@ -11,7 +11,10 @@ import {
   signScanCursor,
   type ScanCursor,
 } from "@/lib/discovery/scan-cursor";
-import { candidateMatchesScan } from "@/lib/discovery/scan";
+import {
+  candidateMatchesScan,
+  candidateScanDisposition,
+} from "@/lib/discovery/scan";
 import { candidateFromGbiz } from "@/lib/discovery/mapping";
 import { discoveryInput, scanCriteria } from "@/lib/discovery/schemas";
 import { AppError } from "@/lib/errors";
@@ -107,6 +110,56 @@ afterEach(() => {
 });
 
 describe("scan cursor authentication and continuation", () => {
+  test("old signed match counts are not reinterpreted as verified counts", () => {
+    const old = {
+      ...openScanCursor(org, criteria(), undefined, now),
+      version: 1,
+    };
+    expectError(() =>
+      openScanCursor(
+        org,
+        criteria(),
+        signScanCursor(old as unknown as ScanCursor),
+        now,
+      ),
+    );
+  });
+
+  test("review candidates share the existing target and remain disjoint on resume", () => {
+    const base = openScanCursor(org, criteria(), undefined, now);
+    const cursor = {
+      ...base,
+      scanned: 20,
+      matchedIds: ids(5),
+      reviewIds: ids(20).slice(5),
+      completedTarget: true,
+    };
+    const resumed = openScanCursor(
+      org,
+      criteria(),
+      signScanCursor(cursor),
+      now,
+    );
+    expect(resumed.target).toBe(40);
+    expect(resumed.matchedIds).toHaveLength(5);
+    expect(resumed.reviewIds).toHaveLength(15);
+    expectError(() =>
+      openScanCursor(
+        org,
+        criteria(),
+        signScanCursor({ ...cursor, reviewIds: ids(20) }),
+        now,
+      ),
+    );
+    expectError(() =>
+      openScanCursor(
+        org,
+        criteria(),
+        signScanCursor({ ...base, scanned: 1, reviewIds: ids(2) }),
+        now,
+      ),
+    );
+  });
   test("refresh mode is bound to the signature and cannot change on resume", () => {
     const ordinary = openScanCursor(org, criteria(), undefined, now);
     expectError(() =>
@@ -386,7 +439,7 @@ describe("scan cursor authentication and continuation", () => {
   });
 
   test.each<Record<string, unknown>>([
-    { version: 2 },
+    { version: 3 },
     { organization: "not-a-uuid" },
     { scope: "not-a-digest" },
     { expires: 0 },
@@ -573,7 +626,44 @@ describe("condition-based scan input", () => {
 
 describe("scan matches saved candidate values", () => {
   test.each([
-    [null, true, true],
+    [{ employee_number: null }, "needs_review"],
+    [{ industry_codes: [] }, "needs_review"],
+    [{ employee_number: null, industry_codes: [] }, "needs_review"],
+    [{ employee_number: null, industry_codes: ["E"] }, "excluded"],
+    [{ employee_number: 51, industry_codes: [] }, "excluded"],
+    [{ employee_number: null, prefecture_code: "14" }, "excluded"],
+    [{ employee_number: 0 }, "excluded"],
+    [{ employee_number: 10 }, "match"],
+    [{ employee_number: 50 }, "match"],
+  ] as const)(
+    "missing fields never rescue another known mismatch: %j",
+    (fields, expected) => {
+      expect(
+        candidateScanDisposition(
+          row({
+            ...fields,
+            industry_codes:
+              "industry_codes" in fields ? [...fields.industry_codes] : ["D"],
+          }),
+          criteria({
+            industry: "D",
+            employeeMin: 10,
+            employeeMax: 50,
+            includeUnknownIndustry: true,
+            includeUnknownEmployees: true,
+          }),
+        ),
+      ).toBe(expected);
+    },
+  );
+
+  test("unknown employees remain ordinary results when there is no employee condition", () => {
+    expect(
+      candidateScanDisposition(row({ employee_number: null }), criteria()),
+    ).toBe("match");
+  });
+  test.each([
+    [null, true, false],
     [null, false, false],
     [0, true, false],
     [0, false, false],
@@ -643,7 +733,7 @@ describe("scan matches saved candidate values", () => {
 
   test.each([
     [[], "D", false, false],
-    [[], "D", true, true],
+    [[], "D", true, false],
     [["E"], "D", true, false],
     [["D", "E"], "D", false, true],
     [[], "unknown", false, true],

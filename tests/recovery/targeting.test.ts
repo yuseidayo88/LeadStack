@@ -200,6 +200,79 @@ describe("targeting input", () => {
 });
 
 describe("targeting PostgREST requests", () => {
+  test("matches exclude both kinds of unknown even when retained for review", async () => {
+    const { db, requests } = database();
+    await listCandidates(
+      db,
+      org,
+      discoveryQuery.parse({
+        industry: "D",
+        employeeMin: 10,
+        employeeMax: 50,
+        includeUnknownEmployees: "true",
+        includeUnknownIndustry: "true",
+      }),
+    );
+    const query = requests[0].searchParams;
+    expect(query.get("industry_codes")).toBe("cs.{D}");
+    expect(query.getAll("employee_number")).toEqual(["gte.10", "lte.50"]);
+    expect(query.getAll("or")).toEqual([]);
+  });
+
+  test("review requires at least one missing field AND keeps known bounds and industry filters", async () => {
+    const { db, requests, fetcher } = database();
+    await listCandidates(
+      db,
+      org,
+      discoveryQuery.parse({
+        resultGroup: "needs_review",
+        prefecture: "13",
+        industry: "D",
+        employeeMin: 10,
+        employeeMax: 50,
+        includeUnknownEmployees: "true",
+        includeUnknownIndustry: "true",
+        businessKeywords: "点検",
+        page: 2,
+        pageSize: 7,
+      }),
+    );
+    const query = requests[0].searchParams;
+    expect(query.get("organization_id")).toBe(`eq.${org}`);
+    expect(query.get("prefecture_code")).toBe("eq.13");
+    expect(query.getAll("or")).toEqual([
+      '(name.ilike."%点検%",provenance->>businessSummary.ilike."%点検%")',
+      "(industry_codes.cs.{D},industry_codes.cd.{})",
+      "(employee_number.is.null,and(employee_number.gte.10,employee_number.lte.50))",
+      "(employee_number.is.null,industry_codes.cd.{})",
+    ]);
+    expect(query.get("offset")).toBe("7");
+    expect(query.get("limit")).toBe("7");
+    expect(
+      fetcher.mock.calls.every(
+        ([, init]) => !init?.method || ["GET", "HEAD"].includes(init.method),
+      ),
+    ).toBe(true);
+  });
+
+  test.each([
+    {},
+    { includeUnknownEmployees: "true" },
+    { employeeMin: 10, includeUnknownEmployees: "false" },
+    { employeeMin: 10, includeUnknownEmployees: "true", hasEmployees: "true" },
+  ])(
+    "review does not broaden the search when no missing field is eligible: %j",
+    async (filters) => {
+      const { db, requests } = database();
+      await listCandidates(
+        db,
+        org,
+        discoveryQuery.parse({ ...filters, resultGroup: "needs_review" }),
+      );
+      expect(requests[0].searchParams.getAll("or")).toContain("(id.is.null)");
+      expect(requests[0].searchParams.get("organization_id")).toBe(`eq.${org}`);
+    },
+  );
   test("uses inclusive numeric bounds and keeps zero distinct from unknown", async () => {
     const { db, requests } = database();
     await listCandidates(
@@ -227,15 +300,22 @@ describe("targeting PostgREST requests", () => {
       "(employee_number.is.null,and(employee_number.lte.50))",
     ],
   ])(
-    "unknown counts join the entire numeric interval %j",
+    "unknown counts stay in the review group with the entire numeric interval %j",
     async (bounds, expected) => {
       const { db, requests } = database();
       await listCandidates(
         db,
         org,
-        discoveryQuery.parse({ ...bounds, includeUnknownEmployees: "true" }),
+        discoveryQuery.parse({
+          ...bounds,
+          includeUnknownEmployees: "true",
+          resultGroup: "needs_review",
+        }),
       );
-      expect(requests[0].searchParams.getAll("or")).toEqual([expected]);
+      expect(requests[0].searchParams.getAll("or")).toEqual([
+        expected,
+        "(employee_number.is.null)",
+      ]);
     },
   );
 
@@ -278,12 +358,15 @@ describe("targeting PostgREST requests", () => {
     expect(query.getAll("or")).toEqual([
       '(name.ilike."%東京%",corporate_number.ilike."%東京%")',
       '(name.ilike."%設備%",provenance->>businessSummary.ilike."%設備%",name.ilike."%点検%",provenance->>businessSummary.ilike."%点検%")',
-      "(industry_codes.cs.{D},industry_codes.cd.{})",
-      "(employee_number.is.null,and(employee_number.gte.10,employee_number.lte.50))",
     ]);
     expect(query.get("prefecture_code")).toBe("eq.13");
     expect(query.get("organization_id")).toBe(`eq.${org}`);
-    expect(query.get("employee_number")).toBe("not.is.null");
+    expect(query.getAll("employee_number")).toEqual([
+      "gte.10",
+      "lte.50",
+      "not.is.null",
+    ]);
+    expect(query.get("industry_codes")).toBe("cs.{D}");
     expect(query.getAll("phone")).toEqual(["not.is.null", "neq."]);
     expect(query.getAll("website_url")).toEqual(["not.is.null", "neq."]);
     expect(query.get("limit")).toBe("7");
@@ -440,18 +523,16 @@ describe("Gbiz business summary and provenance", () => {
   test("already truncated upstream summaries remain visibly truncated even when ASCII fits the byte budget", async () => {
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn<typeof fetch>()
-        .mockResolvedValue(
-          Response.json({
-            "hojin-infos": [
-              {
-                corporate_number: corporateNumber,
-                business_summary: "x".repeat(10_001),
-              },
-            ],
-          }),
-        ),
+      vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json({
+          "hojin-infos": [
+            {
+              corporate_number: corporateNumber,
+              business_summary: "x".repeat(10_001),
+            },
+          ],
+        }),
+      ),
     );
     const normalized = await getGbizCompany(corporateNumber);
     expect(normalized?.businessSummaryTruncated).toBe(true);

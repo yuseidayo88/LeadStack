@@ -47,9 +47,12 @@ export function scanProgressState({
     return { label: "結果の一覧を更新できませんでした", indeterminate: false };
   if (event?.type === "complete")
     return {
-      label: event.matched
-        ? "検索が完了しました"
-        : "検索が完了しました（条件一致0社）",
+      label:
+        event.reason === "scan_limit"
+          ? `確認上限に達しました（この範囲で条件一致${event.matched}社・全件確認済みではありません）`
+          : event.reason === "target"
+            ? `今回の確認目安に達しました（条件一致${event.matched}社・情報不足${event.needsReview ?? 0}社）`
+            : `取得範囲の確認が終了しました（条件一致${event.matched}社・情報不足${event.needsReview ?? 0}社）`,
       indeterminate: false,
     };
   return { label: "検索を停止しました", indeterminate: false };

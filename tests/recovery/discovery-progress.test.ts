@@ -29,6 +29,22 @@ const idle = {
 };
 
 describe("discovery progress reflects acknowledged work", () => {
+  test("the 200-position cap is not reported as an exhaustive search", () => {
+    const result = scanProgressState({
+      ...idle,
+      event: { ...complete, scanned: 200, matched: 0, reason: "scan_limit" },
+    });
+    expect(result.label).toContain("確認上限");
+    expect(result.label).toContain("この範囲で条件一致0社");
+    expect(result.label).toContain("全件確認済みではありません");
+  });
+  test("target completion reports the split without promising 20 verified matches", () => {
+    const result = scanProgressState({
+      ...idle,
+      event: { ...complete, reason: "target", matched: 5, needsReview: 15 },
+    });
+    expect(result.label).toContain("条件一致5社・情報不足15社");
+  });
   test("reports activity before response headers or the first event arrive", () => {
     const state = scanProgressState({
       ...idle,
@@ -54,7 +70,9 @@ describe("discovery progress reflects acknowledged work", () => {
 
   test("an exhausted search can complete below the target without inventing work", () => {
     const state = scanProgressState({ ...idle, event: complete });
-    expect(state.label).toBe("検索が完了しました");
+    expect(state.label).toBe(
+      "取得範囲の確認が終了しました（条件一致3社・情報不足0社）",
+    );
     expect(state.indeterminate).toBe(false);
   });
 

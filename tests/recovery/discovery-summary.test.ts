@@ -93,6 +93,7 @@ test("table response omits full evidence and bounds the excerpt while retaining 
     provenance: {},
     enrichment_result: null,
     matched_business_keywords: ["給与計算"],
+    match_evidence: { industryCode: null, keywords: ["給与計算"], missing: [] },
   });
   expect(Array.from(result.data[0].business_summary ?? "")).toHaveLength(240);
   expect(result.data[0].business_summary).not.toContain("給与計算");

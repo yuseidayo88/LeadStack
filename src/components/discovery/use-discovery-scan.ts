@@ -51,7 +51,9 @@ export function useDiscoveryScan({
   criteria: ScanCriteria;
   onSaved: () => void | Promise<unknown>;
 }) {
-  const storageKey = `leadstack.discovery.scan.v1.${base}`;
+  // Old checkpoints counted unknown fields as matches. Keep the independent
+  // active-run marker unchanged so an old in-flight run is still cancelled.
+  const storageKey = `leadstack.discovery.scan.v2.${base}`;
   const activeStorageKey = activeScanStorageKey(base);
   const scope = JSON.stringify(criteria);
   const [checkpoint, setCheckpoint] = useState<ScanCheckpoint | null>(() => {

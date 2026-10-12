@@ -141,6 +141,13 @@ describe("scan criteria from visible filters", () => {
 });
 
 describe("scan event validation", () => {
+  test("keeps review counts separate and rejects an impossible combined total", () => {
+    const value = event({ scanned: 20, matched: 5, needsReview: 15 });
+    expect(parseScanEvent(value)).toEqual(value);
+    for (const needsReview of [-1, 0.5, Number.NaN, Infinity, 16, 201])
+      expect(parseScanEvent({ ...value, needsReview })).toBeNull();
+  });
+
   test("accepts legacy events and validates optional reused counts", () => {
     expect(parseScanEvent(event())).not.toBeNull();
     expect(

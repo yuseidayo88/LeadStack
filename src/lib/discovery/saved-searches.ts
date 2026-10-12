@@ -38,7 +38,7 @@ export function discoveryFilterChips(f: DiscoveryFilters): FilterChip[] {
       label:
         f.industry === "unknown"
           ? "業種：未確認"
-          : `${industryOptions.find((i) => i.value === f.industry)?.label || f.industry}${f.includeUnknownIndustry ? "（未確認も含む）" : ""}`,
+          : `${industryOptions.find((i) => i.value === f.industry)?.label || f.industry}${f.includeUnknownIndustry ? "（未確認は別枠）" : ""}`,
       clear: { industry: "", includeUnknownIndustry: false },
     });
   if (f.search)
@@ -56,7 +56,7 @@ export function discoveryFilterChips(f: DiscoveryFilters): FilterChip[] {
           : `${f.employeeMax}人以下`;
     chips.push({
       id: "employees",
-      label: `従業員数：${range}${f.includeUnknownEmployees && !f.hasEmployees ? "（未確認も含む）" : ""}`,
+      label: `従業員数：${range}${f.includeUnknownEmployees && !f.hasEmployees ? "（未確認は別枠）" : ""}`,
       clear: { employeeMin: "", employeeMax: "" },
     });
   }

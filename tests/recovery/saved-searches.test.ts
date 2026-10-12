@@ -151,12 +151,12 @@ describe("visible individual filters", () => {
       discoveryFilterChips({ ...filters, hasEmployees: true }).find(
         (chip) => chip.id === "employees",
       )?.label,
-    ).not.toContain("未確認も含む");
+    ).not.toContain("未確認は別枠");
     const industry = discoveryFilterChips({
       ...filters,
       includeUnknownIndustry: true,
     }).find((chip) => chip.id === "industry")!;
-    expect(industry.label).toContain("建設業（未確認も含む）");
+    expect(industry.label).toContain("建設業（未確認は別枠）");
     expect(industry.clear).toEqual({
       industry: "",
       includeUnknownIndustry: false,

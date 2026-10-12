@@ -16,6 +16,7 @@ import type { ScanCriteria, ScanEvent } from "./contracts";
 import { openScanCursor, signScanCursor } from "./scan-cursor";
 import { reserveRequest } from "./service";
 import { reusableGbizDetail } from "./detail-cache";
+import { missingMatchFields } from "./match-evidence";
 import {
   authorizeScanStep,
   commitScanCandidate,
@@ -34,7 +35,7 @@ type Input = {
 const CHUNK_MS = 25_000;
 const START_NEXT_CALL_MS = 20_000;
 
-export function candidateMatchesScan(
+function candidateEligibleForScan(
   row: CompanyCandidateRow,
   criteria: ScanCriteria,
 ) {
@@ -86,6 +87,21 @@ export function candidateMatchesScan(
       return false;
   }
   return true;
+}
+
+export function candidateScanDisposition(
+  row: CompanyCandidateRow,
+  criteria: ScanCriteria,
+) {
+  if (!candidateEligibleForScan(row, criteria)) return "excluded";
+  return missingMatchFields(row, criteria).length ? "needs_review" : "match";
+}
+
+export function candidateMatchesScan(
+  row: CompanyCandidateRow,
+  criteria: ScanCriteria,
+) {
+  return candidateScanDisposition(row, criteria) === "match";
 }
 
 async function currentCandidates(
@@ -201,6 +217,7 @@ export async function startCompanyScan(
           type,
           scanned: cursor.scanned,
           matched: cursor.matchedIds.length,
+          needsReview: cursor.reviewIds.length,
           target: cursor.target,
           saved: cursor.saved,
           reused: cursor.reused,
@@ -225,16 +242,26 @@ export async function startCompanyScan(
           "complete",
           reason,
           reason === "target"
-            ? "条件に合う企業が見つかりました。さらに探すこともできます。"
+            ? "条件一致と情報不足の候補を合わせて今回の目安に達しました。内訳を確認し、必要なら外部取得を続けられます。"
             : reason === "scan_limit"
-              ? "この検索では200社を確認しました。条件を変えて新しい検索を開始できます。"
-              : "取得できた検索範囲を最後まで確認しました。",
+              ? "確認上限200件に達しました。この範囲の結果です。未調査の企業があり得るため、全件確認済みではありません。"
+              : "取得元が返した検索範囲の末尾まで確認しました。条件一致と情報不足は別に表示します。",
         );
       };
       const advance = (number: string) => {
         cursor.offset++;
         cursor.scanned++;
         if (!cursor.seen.includes(number)) cursor.seen.push(number);
+      };
+      const classify = (row: CompanyCandidateRow) => {
+        if (
+          cursor.matchedIds.includes(row.id) ||
+          cursor.reviewIds.includes(row.id)
+        )
+          return;
+        const disposition = candidateScanDisposition(row, input.criteria);
+        if (disposition === "match") cursor.matchedIds.push(row.id);
+        else if (disposition === "needs_review") cursor.reviewIds.push(row.id);
       };
       const run = async () => {
         emit("progress");
@@ -245,7 +272,12 @@ export async function startCompanyScan(
             finish("scan_limit");
             return;
           }
-          if (cursor.matchedIds.length >= cursor.target) {
+          // Keep the prior external-work budget: separating unknowns must not
+          // silently scan more companies just to fill a strict-match target.
+          if (
+            cursor.matchedIds.length + cursor.reviewIds.length >=
+            cursor.target
+          ) {
             finish("target");
             return;
           }
@@ -339,11 +371,7 @@ export async function startCompanyScan(
             cursor.reused++;
             if (cached.employee_number === null) cursor.unknownEmployees++;
             if (!cached.industry_codes.length) cursor.unknownIndustry++;
-            if (
-              candidateMatchesScan(cached, input.criteria) &&
-              !cursor.matchedIds.includes(cached.id)
-            )
-              cursor.matchedIds.push(cached.id);
+            classify(cached);
             advance(number);
             emit("progress");
             continue;
@@ -411,11 +439,7 @@ export async function startCompanyScan(
           if (persisted.saved) cursor.saved++;
           if (detail.employeeNumber === null) cursor.unknownEmployees++;
           if (!detail.industry?.length) cursor.unknownIndustry++;
-          if (
-            candidateMatchesScan(persisted.row, input.criteria) &&
-            !cursor.matchedIds.includes(persisted.row.id)
-          )
-            cursor.matchedIds.push(persisted.row.id);
+          classify(persisted.row);
           advance(number);
           emit("progress");
         }

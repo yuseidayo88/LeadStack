@@ -70,7 +70,7 @@ export function TargetingFilters({
                 onChange({ includeUnknownEmployees: event.target.checked })
               }
             />
-            従業員数が未確認の企業も含める
+            従業員数が未確認の企業を「情報不足」に残す
           </label>
           {!hasEmployeeRange && (
             <p className="text-xs text-muted-foreground">
@@ -102,7 +102,7 @@ export function TargetingFilters({
             id="discovery-keyword-help"
             className="text-xs leading-relaxed text-muted-foreground"
           >
-            企業名・事業内容のいずれかに一致。空白・読点・カンマで8語まで。未取得の事業内容は再取得で補完できます（掲載がある場合）。
+            企業名・事業内容に、指定した語句のどれかがあれば対象です。語句一致は業種の確定ではありません。空白・読点・カンマで8語まで。
           </p>
           {filters.industry && filters.industry !== "unknown" && (
             <label className="flex items-center gap-2 text-sm">
@@ -113,7 +113,7 @@ export function TargetingFilters({
                   onChange({ includeUnknownIndustry: event.target.checked })
                 }
               />
-              業種が未確認の企業も含める
+              業種が未確認の企業を「情報不足」に残す
             </label>
           )}
         </div>

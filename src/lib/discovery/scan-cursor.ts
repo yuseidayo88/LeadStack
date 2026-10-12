@@ -5,7 +5,7 @@ import { AppError } from "@/lib/errors";
 import type { ScanCriteria } from "./contracts";
 
 const cursorSchema = z.strictObject({
-  version: z.literal(1),
+  version: z.literal(2),
   organization: z.uuid(),
   scope: z.string().regex(/^[a-f0-9]{64}$/),
   expires: z.number().int().positive(),
@@ -20,6 +20,7 @@ const cursorSchema = z.strictObject({
   unknownEmployees: z.number().int().min(0).max(200),
   unknownIndustry: z.number().int().min(0).max(200),
   matchedIds: z.array(z.uuid()).max(200),
+  reviewIds: z.array(z.uuid()).max(200),
   seen: z.array(z.string().regex(/^\d{13}$/)).max(200),
   target: z.number().int().min(20).max(200),
   completedTarget: z.boolean(),
@@ -62,7 +63,7 @@ export function openScanCursor(
   if (!token) {
     secret();
     return {
-      version: 1,
+      version: 2,
       organization,
       scope: scope(criteria),
       expires: now + 2 * 60 * 60 * 1000,
@@ -77,6 +78,7 @@ export function openScanCursor(
       unknownEmployees: 0,
       unknownIndustry: 0,
       matchedIds: [],
+      reviewIds: [],
       seen: [],
       target: 20,
       completedTarget: false,
@@ -102,18 +104,19 @@ export function openScanCursor(
       cursor.organization !== organization ||
       cursor.scope !== scope(criteria) ||
       cursor.offset > cursor.numbers.length ||
-      cursor.matchedIds.length > cursor.scanned ||
+      cursor.matchedIds.length + cursor.reviewIds.length > cursor.scanned ||
       cursor.saved > cursor.scanned ||
       cursor.saved + cursor.reused > cursor.scanned ||
       cursor.target % 20 !== 0 ||
-      new Set(cursor.matchedIds).size !== cursor.matchedIds.length
+      new Set([...cursor.matchedIds, ...cursor.reviewIds]).size !==
+        cursor.matchedIds.length + cursor.reviewIds.length
     )
       throw new Error();
   } catch {
     throw new AppError(
       409,
       "scan_scope_changed",
-      "検索条件または再開情報が変わりました。新しい検索を開始してください。",
+      "検索条件または再開情報が変わりました。取得済み候補は残っています。新しい検索を開始してください。",
     );
   }
   if (cursor.expires <= now)
@@ -123,13 +126,16 @@ export function openScanCursor(
       "検索の再開期限を過ぎました。新しい検索を開始してください。",
     );
   if (cursor.completedTarget) {
-    if (cursor.matchedIds.length < cursor.target)
+    if (cursor.matchedIds.length + cursor.reviewIds.length < cursor.target)
       throw new AppError(
         409,
         "scan_scope_changed",
         "検索の再開情報を確認できません。新しい検索を開始してください。",
       );
-    cursor.target = Math.min(200, cursor.matchedIds.length + 20);
+    cursor.target = Math.min(
+      200,
+      cursor.matchedIds.length + cursor.reviewIds.length + 20,
+    );
     cursor.completedTarget = false;
   }
   return cursor;

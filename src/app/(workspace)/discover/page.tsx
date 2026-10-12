@@ -34,6 +34,7 @@ import {
 import { SearchableSelect } from "@/components/crm/searchable-select";
 import { ActivityDialog } from "@/components/crm/activity";
 import { CandidateMobileList } from "@/components/discovery/candidate-mobile-list";
+import { CandidateMatchEvidence } from "@/components/discovery/match-evidence";
 import { CandidateDialog } from "@/components/discovery/candidate-dialog";
 import { PhoneResearchDialog } from "@/components/discovery/phone-research-dialog";
 import { PHONE_RESEARCH_BATCH_LIMIT } from "@/lib/discovery/phone-research";
@@ -51,7 +52,6 @@ import {
 } from "@/lib/discovery/scan-client";
 import {
   defaultDiscoveryFilters,
-  matchingBusinessKeywords,
   parseDiscoveryFilters,
   targetingFilterError,
   targetingPresets,
@@ -127,6 +127,9 @@ function OrganizationDiscovery() {
   const keywords = applied.businessKeywords;
   const preset = targetingPresets.find((item) => item.id === filters.presetId);
   const [page, setPage] = useState(1);
+  const [resultGroup, setResultGroup] = useState<"matches" | "needs_review">(
+    "matches",
+  );
   const [selected, setSelected] = useState<string[]>([]);
   const [selectionRecords, setSelectionRecords] = useState<
     Record<string, Candidate>
@@ -161,6 +164,7 @@ function OrganizationDiscovery() {
           page,
           pageSize: 20,
           view: "summary",
+          resultGroup,
           sort: applied.sort,
           direction: applied.direction,
         })}`,
@@ -567,7 +571,8 @@ function OrganizationDiscovery() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
           <div>
             <h2 id="candidate-list-title" className="font-semibold">
-              取得済み候補{" "}
+              取得済み候補 ·{" "}
+              {resultGroup === "matches" ? "条件一致" : "情報不足"}{" "}
               <span className="ml-1 text-primary">
                 {data?.count.toLocaleString() ?? "—"} 社
               </span>
@@ -589,6 +594,38 @@ function OrganizationDiscovery() {
             />
             再読み込み
           </Button>
+        </div>
+        <div className="space-y-2 border-b px-4 py-3">
+          <div
+            className="flex flex-wrap gap-2"
+            role="group"
+            aria-label="取得済み候補の分類"
+          >
+            {(
+              [
+                ["matches", "条件一致"],
+                ["needs_review", "情報不足（別枠）"],
+              ] as const
+            ).map(([group, label]) => (
+              <Button
+                key={group}
+                size="sm"
+                variant={resultGroup === group ? "default" : "outline"}
+                aria-pressed={resultGroup === group}
+                onClick={() => {
+                  setResultGroup(group);
+                  resetPage();
+                }}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {resultGroup === "matches"
+              ? "人数の範囲・業種の大分類を指定した場合、不明な企業は条件一致に数えません。登録されている値で照合しています。"
+              : "ほかの条件を満たし、指定した人数・業種が未確認の候補です。「情報不足に残す」を有効にした項目が対象です。営業リストへの取込前に確認してください。"}
+          </p>
         </div>
         <div className="space-y-2 border-b bg-slate-50/50 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
           <p>
@@ -815,19 +852,7 @@ function OrganizationDiscovery() {
                             {candidate.business_summary}
                           </p>
                         )}
-                        {keywords &&
-                          (
-                            candidate.matched_business_keywords ??
-                            matchingBusinessKeywords(candidate, keywords)
-                          ).length > 0 && (
-                            <p className="mt-1 max-w-72 text-[11px] text-muted-foreground">
-                              名称・事業内容に一致：
-                              {(
-                                candidate.matched_business_keywords ??
-                                matchingBusinessKeywords(candidate, keywords)
-                              ).join("・")}
-                            </p>
-                          )}
+                        <CandidateMatchEvidence candidate={candidate} />
                       </td>
                       <td className="max-w-60 text-xs">
                         <p
@@ -906,14 +931,18 @@ function OrganizationDiscovery() {
         ) : (
           <Empty
             title={
-              data.totalCached
-                ? "条件に合う取得済み候補はありません"
-                : "条件を指定して企業を探しましょう"
+              resultGroup === "needs_review"
+                ? "この条件で情報不足の取得済み候補はありません"
+                : data.totalCached
+                  ? "条件に合う取得済み候補はありません"
+                  : "条件を指定して企業を探しましょう"
             }
             description={
-              data.totalCached
-                ? "上の「条件に合う企業を探す」で外部の企業を確認できます。見つからない場合は人数・業種が未確認の企業を含めるか、条件を広げてください。"
-                : "都道府県・業種・人数などを指定し、「条件に合う企業を探す」を押してください。企業名は空欄で使えます。"
+              resultGroup === "needs_review"
+                ? "人数・業種の条件と「情報不足に残す」の設定が適用されます。別枠の表示だけでは外部取得は行いません。"
+                : data.totalCached
+                  ? "取得済みの範囲での結果です。「情報不足（別枠）」も確認できます。外部取得は上の検索操作から行えます。"
+                  : "都道府県・業種・人数などを指定し、「条件に合う企業を探す」を押してください。企業名は空欄で使えます。"
             }
             action={
               hasFilters && data.totalCached ? (
@@ -925,12 +954,17 @@ function OrganizationDiscovery() {
           />
         )}
         {!filterError && (
-          <Pagination
-            page={page}
-            count={data?.count}
-            pageSize={data?.pageSize ?? 20}
-            onChange={setPage}
-          />
+          <div role="group" aria-label="保存済み一覧のページ送り">
+            <p className="px-4 pt-3 text-xs text-muted-foreground">
+              保存済み一覧のページ送り · 新しい企業の外部取得は行いません
+            </p>
+            <Pagination
+              page={data?.page ?? page}
+              count={data?.count}
+              pageSize={data?.pageSize ?? 20}
+              onChange={setPage}
+            />
+          </div>
         )}
       </section>
       {focused && (

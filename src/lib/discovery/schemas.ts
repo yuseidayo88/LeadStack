@@ -81,6 +81,7 @@ export const discoveryQuery = z
   .object({
     search: z.string().trim().max(200).default(""),
     view: z.enum(["full", "summary"]).default("full"),
+    resultGroup: z.enum(["matches", "needs_review"]).default("matches"),
     prefecture: z.preprocess(blankOptional, prefecture.optional()),
     industry: z.preprocess(
       blankOptional,

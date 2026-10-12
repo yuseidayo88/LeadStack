@@ -5,6 +5,7 @@ import type { Candidate } from "@/lib/discovery/contracts";
 import { ActivityDialog } from "@/components/crm/activity";
 import { Button } from "@/components/ui/button";
 import { employeeLabel, fetchedLabel, PhoneLink, WebsiteLink } from "./display";
+import { CandidateMatchEvidence } from "./match-evidence";
 
 export function CandidateMobileList({
   candidates,
@@ -108,6 +109,7 @@ export function CandidateMobileList({
                   {candidate.industry_labels.join("・") || "業種：未確認"} ·
                   従業員数 {employeeLabel(candidate.employee_number)}
                 </p>
+                <CandidateMatchEvidence candidate={candidate} />
               </div>
             </div>
             <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">

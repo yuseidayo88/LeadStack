@@ -13,6 +13,11 @@ export type EnrichmentProposal = {
 export type Candidate = {
   list_summary?: true;
   matched_business_keywords?: string[];
+  match_evidence?: {
+    industryCode: string | null;
+    keywords: string[];
+    missing: ("employees" | "industry")[];
+  };
   id: string;
   organization_id: string;
   corporate_number: string;
@@ -86,6 +91,8 @@ export type ScanEvent = {
   type: "progress" | "complete" | "paused" | "error";
   scanned: number;
   matched: number;
+  // These candidates consume the same stop budget, but are never matches.
+  needsReview?: number;
   target: number;
   saved: number;
   reused?: number;

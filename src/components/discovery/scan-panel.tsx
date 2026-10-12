@@ -61,7 +61,7 @@ export function DiscoveryScanPanel({
         <div className="min-w-0">
           <p className="text-sm font-medium">条件に合う企業を検索</p>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            一致20社を目安に、最大200社を確認します。途中で停止・再開できます。
+            条件一致と情報不足を合わせて20社ずつ、最大200件を確認します。外部取得は途中で停止・再開できます。
           </p>
         </div>
         {canWrite && (
@@ -103,8 +103,8 @@ export function DiscoveryScanPanel({
                 >
                   <Play />
                   {event?.reason === "target"
-                    ? "さらに20社を探す"
-                    : "保存済みの位置から再開"}
+                    ? "外部取得を続ける（候補20社分）"
+                    : "外部取得を続きから再開"}
                 </Button>
               )
             )}
@@ -149,22 +149,26 @@ export function DiscoveryScanPanel({
               label="企業情報の確認数"
               value={event?.scanned ?? 0}
               total={200}
-              description={`${event?.scanned ?? 0} / 上限200社`}
+              description={`${event?.scanned ?? 0} / 確認上限200件`}
             />
             <WorkProgress
-              label="条件に合う企業"
-              value={goalPending ? null : (event?.matched ?? 0)}
+              label="今回の候補の確認目安"
+              value={
+                goalPending
+                  ? null
+                  : (event?.matched ?? 0) + (event?.needsReview ?? 0)
+              }
               total={event?.target || 20}
               description={
                 goalPending
-                  ? `${event?.matched ?? 0}社（次の目標を確認中）`
-                  : `${event?.matched ?? 0} / 目標${event?.target || 20}社`
+                  ? "次の確認目安を準備中"
+                  : `${(event?.matched ?? 0) + (event?.needsReview ?? 0)} / 目安${event?.target || 20}社`
               }
             />
           </div>
-          <p className="sr-only">
-            確認 {event?.scanned ?? 0} / 200 社 · 条件一致 {event?.matched ?? 0}{" "}
-            / {event?.target ?? 20} 社
+          <p>
+            この検索の条件一致 {event?.matched ?? 0}社 · 情報不足{" "}
+            {event?.needsReview ?? 0}社（別枠）
           </p>
           {!!event?.reused && (
             <p className="text-muted-foreground">
@@ -183,9 +187,9 @@ export function DiscoveryScanPanel({
             <p className="text-muted-foreground">
               {goalPending
                 ? "次の目標件数を確認しています。"
-                : `条件一致${event?.target || 20}社に達するか、上限200社または取得範囲の最後まで確認すると終了します。`}{" "}
+                : `条件一致と情報不足の合計が${event?.target || 20}社に達するか、確認上限200件または取得範囲の末尾で終了します。`}{" "}
               上限まで残り{Math.max(0, 200 - (event?.scanned ?? 0))}
-              社。取得先の応答で所要時間が変わります。
+              件。取得先の応答で所要時間が変わります。
             </p>
           )}
           {scan.cancellation === "pending" ? (
@@ -198,7 +202,7 @@ export function DiscoveryScanPanel({
             <p>アクセス間隔を空けて待機中です。自動で続きを確認します。</p>
           ) : scan.running ? (
             <p>
-              一致した企業から下の候補に表示します。途中で停止しても保存済みの候補は残ります。
+              条件一致と情報不足を下の一覧で分けて表示します。途中で停止しても保存済みの候補は残ります。
             </p>
           ) : event?.type === "progress" && scan.canResume ? (
             <p>検索は停止中です。同じ条件で続きから再開できます。</p>
